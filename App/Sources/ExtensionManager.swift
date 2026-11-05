@@ -45,6 +45,19 @@ final class ExtensionManager: NSObject, WKWebExtensionControllerDelegate {
         controller = WKWebExtensionController(configuration: WKWebExtensionController.Configuration(identifier: identifier))
         super.init()
         controller.delegate = self
+        // WebKit records an extension's errors, such as a background script
+        // that fails to start, on its context. They go to the log in full.
+        NotificationCenter.default.addObserver(forName: WKWebExtensionContext.errorsDidUpdateNotification,
+                                               object: nil, queue: .main) { notification in
+            guard let context = notification.object as? WKWebExtensionContext else { return }
+            MainActor.assumeIsolated {
+                let name = context.webExtension.displayName ?? "Extension"
+                for error in context.errors {
+                    let nsError = error as NSError
+                    ExtensionManager.log.error("\(name, privacy: .public): \(nsError.localizedDescription, privacy: .public) \(String(describing: nsError.userInfo), privacy: .public)")
+                }
+            }
+        }
         reloadInstalled()
         Task { await loadAllEnabled() }
     }
@@ -293,6 +306,106 @@ final class ExtensionManager: NSObject, WKWebExtensionControllerDelegate {
                          of: view, preferredEdge: .minY)
         }
         completionHandler(nil)
+    }
+
+    // MARK: Native messaging
+
+    /// Open `connectNative` ports and their hosts. Releasing a port disconnects it.
+    @ObservationIgnored private var nativePorts: [ObjectIdentifier: (port: WKWebExtension.MessagePort, host: NativeHostConnection)] = [:]
+    /// Hosts started for one `sendNativeMessage`, kept until they reply or quit.
+    @ObservationIgnored private var oneShotHosts: [ObjectIdentifier: NativeHostConnection] = [:]
+
+    /// The host manifest that lets this extension reach `name`.
+    private func nativeHostManifest(named name: String?, for context: WKWebExtensionContext) throws
+        -> (manifest: NativeMessagingHostManifest, origin: String) {
+        guard let name, !name.isEmpty else { throw NativeMessagingError.noApplicationName }
+        guard let item = loaded.values.first(where: { $0.context === context })?.installed else {
+            throw NativeMessagingError.noExtensionID
+        }
+        guard item.source == .folder else { throw NativeMessagingError.safariAppExtension }
+        guard let id = ChromeExtensionID.id(forExtensionFolder: URL(filePath: item.path)) else {
+            throw NativeMessagingError.noExtensionID
+        }
+        let origin = ChromeExtensionID.origin(for: id)
+        do {
+            let folders = NativeMessagingHosts.defaultFolders(home: FileManager.default.homeDirectoryForCurrentUser)
+            return (try NativeMessagingHosts.manifest(named: name, for: origin, in: folders), origin)
+        } catch let error as NativeMessagingHosts.LookupError {
+            throw NativeMessagingError.lookup(error)
+        }
+    }
+
+    /// `runtime.sendNativeMessage`: starts the host, sends one message, and
+    /// replies with the host's first message. The host is then closed.
+    func webExtensionController(_ controller: WKWebExtensionController, sendMessage message: Any,
+                                toApplicationWithIdentifier applicationIdentifier: String?,
+                                for extensionContext: WKWebExtensionContext,
+                                replyHandler: @escaping (Any?, (any Error)?) -> Void) {
+        do {
+            let (manifest, origin) = try nativeHostManifest(named: applicationIdentifier, for: extensionContext)
+            let host = try NativeHostConnection.start(manifest: manifest, origin: origin)
+            let key = ObjectIdentifier(host)
+            oneShotHosts[key] = host
+            var replied = false
+            host.onMessage = { [weak host] reply in
+                guard !replied else { return }
+                replied = true
+                replyHandler(reply, nil)
+                host?.close()
+            }
+            host.onClose = { [weak self] error in
+                self?.oneShotHosts[key] = nil
+                guard !replied else { return }
+                replied = true
+                replyHandler(nil, error ?? NativeMessagingError.closedWithoutReply)
+            }
+            try host.send(message)
+        } catch {
+            ExtensionManager.log.error("Native message failed: \(error.localizedDescription, privacy: .public)")
+            replyHandler(nil, error)
+        }
+    }
+
+    /// `runtime.connectNative`: starts the host and joins it to the port until
+    /// either side disconnects.
+    func webExtensionController(_ controller: WKWebExtensionController, connectUsing port: WKWebExtension.MessagePort,
+                                for extensionContext: WKWebExtensionContext,
+                                completionHandler: @escaping ((any Error)?) -> Void) {
+        do {
+            let (manifest, origin) = try nativeHostManifest(named: port.applicationIdentifier, for: extensionContext)
+            let host = try NativeHostConnection.start(manifest: manifest, origin: origin)
+            let key = ObjectIdentifier(port)
+            nativePorts[key] = (port, host)
+            port.messageHandler = { [weak host] message, error in
+                guard error == nil, let message else { return }
+                MainActor.assumeIsolated {
+                    do {
+                        try host?.send(message)
+                    } catch {
+                        ExtensionManager.log.error("Could not send to host: \(error.localizedDescription, privacy: .public)")
+                    }
+                }
+            }
+            port.disconnectHandler = { [weak self, weak host] _ in
+                MainActor.assumeIsolated {
+                    host?.close()
+                    self?.nativePorts[key] = nil
+                }
+            }
+            host.onMessage = { [weak port] message in
+                port?.sendMessage(message, completionHandler: nil)
+            }
+            host.onClose = { [weak self, weak port] error in
+                if let port, !port.isDisconnected {
+                    port.disconnect(throwing: error)
+                }
+                self?.nativePorts[key] = nil
+            }
+            completionHandler(nil)
+        } catch {
+            ExtensionManager.log.error("Native connection failed: \(error.localizedDescription, privacy: .public)")
+            completionHandler(error)
+        }
     }
 
     // MARK: Prompts and pages
