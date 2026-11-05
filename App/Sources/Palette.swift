@@ -180,8 +180,11 @@ private struct PaletteRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            icon
-                .frame(width: 22, height: 22)
+            HStack(spacing: 8) {
+                kindGlyph
+                icon
+                    .frame(width: 22, height: 22)
+            }
             VStack(alignment: .leading, spacing: 1) {
                 Text(title)
                     .font(.system(size: 13.5, weight: .medium))
@@ -212,22 +215,37 @@ private struct PaletteRow: View {
         switch item {
         case .navigate(let url):
             SiteIcon(url: url, size: 18)
-        case .search:
-            symbol("magnifyingglass")
+        case .search(_, _, let url):
+            SiteIcon(url: url, size: 18)
         case .tab(let tab):
             SiteIcon(url: tab.url, size: 18)
         case .history(let entry):
             SiteIcon(url: entry.url, size: 18)
         case .bookmark(let bookmark):
             SiteIcon(url: bookmark.url, size: 18)
-                .overlay(alignment: .bottomTrailing) {
-                    Image(systemName: "bookmark.fill")
-                        .font(.system(size: 7, weight: .bold))
-                        .foregroundStyle(.tint)
-                        .offset(x: 3, y: 3)
-                }
         case .command(let command):
             symbol(command.symbol)
+        }
+    }
+
+    /// A small symbol at the start of the row that says what kind of row it is.
+    private var kindGlyph: some View {
+        Image(systemName: kind.symbol)
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(selected ? AnyShapeStyle(.tint) : AnyShapeStyle(.tertiary))
+            .frame(width: 14)
+            .accessibilityLabel(kind.name)
+    }
+
+    /// The symbol and spoken name for each kind of row.
+    private var kind: (symbol: String, name: String) {
+        switch item {
+        case .navigate: ("arrow.up.right", "Address")
+        case .search: ("magnifyingglass", "Search")
+        case .tab: ("square.on.square", "Open tab")
+        case .history: ("clock.arrow.circlepath", "History")
+        case .bookmark: ("bookmark.fill", "Bookmark")
+        case .command: ("command", "Command")
         }
     }
 
