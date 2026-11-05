@@ -24,6 +24,11 @@ enum Design {
         static let maximumResultsHeight: CGFloat = 430
     }
 
+    enum MinorChord {
+        /// The height of the bar that fades in at the top of a Minor Chord window.
+        static let barHeight: CGFloat = 34
+    }
+
     enum Page {
         /// The corner radius of the page when it sits beside the pinned sidebar.
         static let cornerRadius: CGFloat = 10

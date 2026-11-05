@@ -37,6 +37,14 @@
                 <string>https</string>
             </array>
         </dict>
+        <dict>
+            <key>CFBundleURLName</key>
+            <string>Chord command</string>
+            <key>CFBundleURLSchemes</key>
+            <array>
+                <string>chord</string>
+            </array>
+        </dict>
     </array>
     <key>CFBundleDocumentTypes</key>
     <array>

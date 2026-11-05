@@ -62,9 +62,40 @@ final class TabSession: NSObject, WKNavigationDelegate, WKUIDelegate {
 
     /// A link with target="_blank", or window.open, opens a new tab. WebKit
     /// requires the new web view to use the configuration it passes here.
-    /// The new tab opens in the window that shows this tab.
+    /// Where this tab is, for routing the links clicked in it.
+    private var linkContext: LinkRouting.Context? {
+        guard let state = sessions?.windowState(showing: tabID) else { return nil }
+        return LinkRouting.Context(spaceID: state.spaceID, groupID: state.contents.group(containing: tabID)?.id)
+    }
+
+    /// Hands a clicked link to Air Traffic Control. True when it went elsewhere.
+    private func routeClickedLink(_ navigationAction: WKNavigationAction) -> Bool {
+        guard navigationAction.navigationType == .linkActivated,
+              let source = webView.url, let target = navigationAction.request.url,
+              let context = linkContext, let appDelegate = NSApp.delegate as? AppDelegate else { return false }
+        let window = appDelegate.majorWindow(showing: sessions?.windowState(showing: tabID))
+        return appDelegate.routeClickedLink(target, from: source, context: context, window: window)
+    }
+
+    /// A clicked link to another site goes where Air Traffic Control sends it.
+    /// Redirects, form submissions, and script navigation always load in place.
+    func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,
+                 decisionHandler: @escaping @MainActor (WKNavigationActionPolicy) -> Void) {
+        if navigationAction.targetFrame?.isMainFrame == true, routeClickedLink(navigationAction) {
+            decisionHandler(.cancel)
+            return
+        }
+        decisionHandler(.allow)
+    }
+
+    /// A clicked link that opens a new window goes where the rules send it.
+    /// Otherwise the new tab opens in the window that shows this tab, in a
+    /// matching group when there is one.
     func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
                  for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
+        if routeClickedLink(navigationAction) {
+            return nil
+        }
         guard let sessions, let state = sessions.windowState(showing: tabID),
               let tab = state.openTab(navigationAction.request.url ?? URL(string: "about:blank")!) else {
             return nil
@@ -159,7 +190,7 @@ final class TabSessions {
 
     /// Each profile gets its own persistent website data store, so cookies
     /// and logins in one profile are not visible to another.
-    private func configuration(forProfile profileID: UUID) -> WKWebViewConfiguration {
+    func configuration(forProfile profileID: UUID) -> WKWebViewConfiguration {
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = dataStore(forProfile: profileID)
         return configuration

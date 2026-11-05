@@ -1,5 +1,6 @@
 import AppKit
 import OSLog
+import WebKit
 import chord_logic
 
 /// The application shell. It opens the database, builds the main menu, and
@@ -11,6 +12,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var library: Library?
     private var sessions: TabSessions?
     private var windows: [BrowserWindowController] = []
+    private var minorWindows: [MinorChordWindowController] = []
     private var airTrafficControl: AirTrafficControlWindowController?
     /// Links that arrived before the database was open.
     private var pendingURLs: [URL] = []
@@ -71,26 +73,115 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             pendingURLs.append(contentsOf: urls)
             return
         }
-        for url in urls where HistoryRanking.isRecordable(url) {
-            route(url, from: nil)
+        for url in urls {
+            if case .minor(let target) = ChordLink(url) {
+                // `open "chord://minor?url=…"` forces a Minor Chord window.
+                openMinorChord(url: target, profileID: minorChordProfile(for: target))
+            } else if HistoryRanking.isRecordable(url) {
+                route(url, from: nil)
+            }
         }
+    }
+
+    /// The profile for a forced Minor Chord window: the profile a rule names
+    /// for the link, or the profile of the front window's space.
+    private func minorChordProfile(for url: URL) -> UUID {
+        if case .minorChord(let profileID) = library?.decide(url).route {
+            return profileID
+        }
+        return frontMajorWindow()?.state.contents.profile.id ?? library!.profiles[0].id
     }
 
     /// Opens `url` where the rules send it. A link routed to a space opens
     /// in `window`, or in the frontmost Major Chord window, which switches to
     /// that space. With no route, it opens in that window's current space.
+    ///
+    /// A tab group in the window's space that takes the link wins over a
+    /// rule that would send it to a Minor Chord window.
     func route(_ url: URL, from window: BrowserWindowController?) {
         guard let library, let target = window ?? frontWindow() else { return }
+        let groupHere = target.state.contents.group(for: url) != nil
         switch library.destination(for: url, fallbackSpace: target.state.spaceID) {
+        case .minorChord(let profileID) where !groupHere:
+            openMinorChord(url: url, profileID: profileID)
         case .space(let spaceID):
             target.state.selectSpace(spaceID)
             target.state.openTab(url)
             target.showWindow(nil)
         case .minorChord:
-            // Minor Chord windows arrive in Phase 4. Until then, open a tab.
             target.state.openTab(url)
             target.showWindow(nil)
         }
+    }
+
+    /// Handles a link the user clicked inside a page. Returns true when the
+    /// link was sent somewhere else, so the page should not load it.
+    /// `window` is the Major Chord window that holds the page, or nil for a
+    /// Minor Chord window.
+    func routeClickedLink(_ target: URL, from source: URL, context: LinkRouting.Context,
+                          window: BrowserWindowController?) -> Bool {
+        guard let library else { return false }
+        let action = LinkRouting.action(source: source, target: target, context: context, rules: library.rules) {
+            url, spaceID in library.contents(of: spaceID)?.group(for: url)?.id
+        }
+        switch action {
+        case .stay:
+            return false
+        case .openMinorChord(let profileID):
+            openMinorChord(url: target, profileID: profileID)
+        case .openInGroup(let groupID):
+            guard let major = window ?? frontWindow(),
+                  let spaceID = library.allTabs.first(where: { $0.id == groupID })?.spaceID else { return false }
+            major.state.selectSpace(spaceID)
+            major.state.openTab(target, inGroup: groupID)
+            major.showWindow(nil)
+        case .openInSpace(let spaceID):
+            guard let major = window ?? frontWindow() else { return false }
+            major.state.selectSpace(spaceID)
+            major.state.openTab(target)
+            major.showWindow(nil)
+        }
+        return true
+    }
+
+    /// Opens a Minor Chord window. With `configuration`, the window adopts a
+    /// configuration that WebKit gave for a new window; otherwise it uses the
+    /// profile's website data.
+    @discardableResult
+    func openMinorChord(url: URL?, profileID: UUID,
+                        configuration: WKWebViewConfiguration? = nil) -> MinorChordWindowController? {
+        guard let library, let sessions else { return nil }
+        let controller = MinorChordWindowController(
+            url: url, profileID: profileID, library: library,
+            configuration: configuration ?? sessions.configuration(forProfile: profileID))
+        controller.onClose = { [weak self, weak controller] in
+            self?.minorWindows.removeAll { $0 === controller }
+        }
+        if let previous = minorWindows.last?.window, let window = controller.window {
+            window.setFrameTopLeftPoint(window.cascadeTopLeft(from: NSPoint(x: previous.frame.minX,
+                                                                            y: previous.frame.maxY)))
+        }
+        minorWindows.append(controller)
+        controller.showWindow(nil)
+        return controller
+    }
+
+    /// The Major Chord window whose state is `state`.
+    func majorWindow(showing state: WindowState?) -> BrowserWindowController? {
+        guard let state else { return nil }
+        return windows.first { $0.state === state }
+    }
+
+    /// Opens `url` in a tab in the front Major Chord window, without routing.
+    func openInMajorWindow(_ url: URL) {
+        guard let major = frontWindow() else { return }
+        major.state.openTab(url)
+        major.showWindow(nil)
+    }
+
+    /// The frontmost Major Chord window, creating one when none is open.
+    func frontMajorWindow() -> BrowserWindowController? {
+        frontWindow()
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
@@ -222,6 +313,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         windowMenu.addItem(withTitle: "Minimize", action: #selector(NSWindow.performMiniaturize(_:)),
                            keyEquivalent: "m")
         windowMenu.addItem(withTitle: "Zoom", action: #selector(NSWindow.performZoom(_:)), keyEquivalent: "")
+        windowMenu.addItem(withTitle: "Open in Chord Window",
+                           action: #selector(MinorChordWindowController.moveToMajorWindow(_:)), keyEquivalent: "O")
         windowMenu.addItem(.separator())
         windowMenu.addItem(withTitle: "Chord", action: #selector(showMainWindow(_:)), keyEquivalent: "0")
         mainMenu.addItem(submenu(windowMenu))
