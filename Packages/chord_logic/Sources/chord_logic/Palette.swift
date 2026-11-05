@@ -5,7 +5,7 @@ import Foundation
 public struct PaletteCommand: Equatable, Sendable, Identifiable {
     public let id: String
     public let title: String
-    /// An SF Symbol name.
+    /// A Tabler icon name, such as "plus". The app draws it with `Icon`.
     public let symbol: String
     /// Extra words that also match, such as "default" for the search engine commands.
     public let keywords: [String]

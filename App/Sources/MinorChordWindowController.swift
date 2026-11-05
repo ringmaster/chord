@@ -257,8 +257,7 @@ private struct MinorChordBar: View {
                 .lineLimit(1)
             Spacer(minLength: 0)
             Button(action: onMoveToMajor) {
-                Image(systemName: "sidebar.left")
-                    .font(.system(size: 12, weight: .semibold))
+                Icon("layout-sidebar", size: 15)
                     .frame(width: 26, height: 22)
                     .contentShape(Rectangle())
             }

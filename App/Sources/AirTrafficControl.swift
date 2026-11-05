@@ -168,8 +168,7 @@ struct AirTrafficControlView: View {
 
     private var header: some View {
         HStack(alignment: .firstTextBaseline, spacing: 12) {
-            Image(systemName: "point.3.filled.connected.trianglepath.dotted")
-                .font(.system(size: 22, weight: .semibold))
+            Icon("route", size: 28)
                 .foregroundStyle(.tint)
             VStack(alignment: .leading, spacing: 3) {
                 Text("Air Traffic Control")
@@ -191,8 +190,7 @@ private struct TestField: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 10) {
-                Image(systemName: "paperplane")
-                    .font(.system(size: 14, weight: .semibold))
+                Icon("send", size: 17)
                     .foregroundStyle(.secondary)
                 TextField("", text: $model.testText, prompt: Text("Paste a link to see where it goes"))
                     .textFieldStyle(.plain)
@@ -202,7 +200,7 @@ private struct TestField: View {
                     Button {
                         model.testText = ""
                     } label: {
-                        Image(systemName: "xmark.circle.fill")
+                        Icon("circle-x-filled", size: 16)
                             .foregroundStyle(.tertiary)
                     }
                     .buttonStyle(ChromeButtonStyle(shape: .circle))
@@ -239,8 +237,7 @@ private struct TestResult: View {
     var body: some View {
         HStack(spacing: 10) {
             SiteIcon(url: url, size: 16)
-            Image(systemName: "arrow.right")
-                .font(.system(size: 11, weight: .bold))
+            Icon("arrow-right", size: 14)
                 .foregroundStyle(.secondary)
             DestinationLabel(route: decision.route, library: model.library, fallback: true)
             if let group = model.testGroup {
@@ -253,7 +250,7 @@ private struct TestResult: View {
                 Button {
                     model.addRule(matcher)
                 } label: {
-                    Label("Make a rule for \(matcher.value)", systemImage: "plus")
+                    Label { Text("Make a rule for \(matcher.value)") } icon: { Icon("plus", size: 14) }
                         .font(.system(size: 12, weight: .semibold))
                         .padding(.horizontal, 10)
                         .frame(height: 26)
@@ -279,8 +276,7 @@ private struct DestinationLabel: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            Image(systemName: symbol)
-                .font(.system(size: 12, weight: .semibold))
+            Icon(symbol, size: 15)
             Text(text)
                 .font(.system(size: 13, weight: .semibold))
         }
@@ -289,9 +285,9 @@ private struct DestinationLabel: View {
 
     private var symbol: String {
         switch route {
-        case .space: "square.stack"
-        case .minorChord: "macwindow"
-        case nil: "square.dashed"
+        case .space: "stack-2"
+        case .minorChord: "app-window"
+        case nil: "square-dashed"
         }
     }
 
@@ -348,8 +344,7 @@ private struct RuleCard: View {
             Button {
                 withAnimation(.easeOut(duration: 0.2)) { library.deleteRule(rule.id) }
             } label: {
-                Image(systemName: "trash")
-                    .font(.system(size: 12, weight: .medium))
+                Icon("trash", size: 15)
                     .foregroundStyle(.secondary)
                     .frame(width: 26, height: 26)
                     .contentShape(Rectangle())
@@ -511,11 +506,11 @@ private struct ScopePill: View {
         ChoicePill(title: title, open: $open) {
             ChoiceList {
                 ChoiceRow(title: "and its subdomains", detail: "datadoghq.com also covers app.datadoghq.com",
-                          symbol: "square.3.layers.3d", selected: matcher.scope == .domain) { set(.domain) }
+                          symbol: "sitemap", selected: matcher.scope == .domain) { set(.domain) }
                 ChoiceRow(title: "only", detail: "Just this host. www. is ignored",
-                          symbol: "square", selected: matcher.scope == .host) { set(.host) }
+                          symbol: "world-www", selected: matcher.scope == .host) { set(.host) }
                 ChoiceRow(title: "as a pattern", detail: "A regular expression tested against the whole link",
-                          symbol: "chevron.left.forwardslash.chevron.right",
+                          symbol: "code",
                           selected: matcher.scope == .pattern) { set(.pattern) }
             }
         }
@@ -597,20 +592,20 @@ private struct RoutePill: View {
             ChoiceList {
                 ChoiceHeading("Spaces")
                 ForEach(library.spaces) { space in
-                    ChoiceRow(title: space.name, detail: profileName(space.profileID), symbol: "square.stack",
+                    ChoiceRow(title: space.name, detail: profileName(space.profileID), symbol: "stack-2",
                               selected: rule.actions.route == .space(space.id)) { set(.space(space.id)) }
                 }
                 ChoiceHeading("Minor Chord window")
                 ForEach(library.profiles) { profile in
                     ChoiceRow(title: "Minor Chord window", detail: "Uses the \(profile.name) profile",
-                              symbol: "macwindow",
+                              symbol: "app-window",
                               selected: rule.actions.route == .minorChord(profileID: profile.id)) {
                         set(.minorChord(profileID: profile.id))
                     }
                 }
                 ChoiceHeading("Other")
                 ChoiceRow(title: "Anywhere", detail: "Do not route; other actions still apply",
-                          symbol: "square.dashed", selected: rule.actions.route == nil) { set(nil) }
+                          symbol: "square-dashed", selected: rule.actions.route == nil) { set(nil) }
             }
         }
     }
@@ -643,8 +638,7 @@ private struct ChoicePill<Label: View, Content: View>: View {
         } label: {
             HStack(spacing: 5) {
                 label
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 8, weight: .bold))
+                Icon("chevron-down", size: 11)
                     .foregroundStyle(.secondary)
             }
             .padding(.horizontal, 10)
@@ -705,8 +699,7 @@ private struct ChoiceRow: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 10) {
-                Image(systemName: symbol)
-                    .font(.system(size: 13, weight: .medium))
+                Icon(symbol, size: 16)
                     .frame(width: 20)
                     .foregroundStyle(selected ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
                 VStack(alignment: .leading, spacing: 1) {
@@ -715,8 +708,7 @@ private struct ChoiceRow: View {
                 }
                 Spacer(minLength: 4)
                 if selected {
-                    Image(systemName: "checkmark")
-                        .font(.system(size: 11, weight: .bold))
+                    Icon("check", size: 14)
                         .foregroundStyle(.tint)
                 }
             }
@@ -760,8 +752,7 @@ private struct DragHandle: View {
     let visible: Bool
 
     var body: some View {
-        Image(systemName: "line.3.horizontal")
-            .font(.system(size: 11, weight: .semibold))
+        Icon("grip-horizontal", size: 14)
             .foregroundStyle(.tertiary)
             .frame(width: 16, height: 26)
             .contentShape(Rectangle())
@@ -791,8 +782,7 @@ private struct AddRuleButton: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 8) {
-                Image(systemName: "plus")
-                    .font(.system(size: 12, weight: .bold))
+                Icon("plus", size: 15)
                 Text("New rule")
                     .font(.system(size: 13, weight: .medium))
             }
@@ -814,8 +804,7 @@ private struct EmptyRules: View {
 
     var body: some View {
         VStack(spacing: 12) {
-            Image(systemName: "point.3.connected.trianglepath.dotted")
-                .font(.system(size: 34, weight: .light))
+            Icon("route", size: 42)
                 .foregroundStyle(.tertiary)
             Text("No rules yet")
                 .font(.system(size: 15, weight: .semibold))
@@ -901,8 +890,7 @@ private struct GroupCard: View {
             Button {
                 withAnimation(.easeOut(duration: 0.2)) { library.ungroup(group.id) }
             } label: {
-                Image(systemName: "rectangle.stack.badge.minus")
-                    .font(.system(size: 12, weight: .medium))
+                Icon("stack-pop", size: 15)
                     .foregroundStyle(.secondary)
                     .frame(width: 26, height: 26)
                     .contentShape(Rectangle())
@@ -958,7 +946,7 @@ private struct OvertonesPill: View {
                 ForEach(choices, id: \.self) { id in
                     let known = model.overtones.overtones.contains { $0.id == id }
                     ChoiceRow(title: id, detail: known ? detail(for: id) : "Missing from the overtones folder",
-                              symbol: "wand.and.sparkles", selected: rule.actions.overtones.contains(id)) {
+                              symbol: "wand", selected: rule.actions.overtones.contains(id)) {
                         toggle(id)
                     }
                 }

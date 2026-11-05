@@ -103,8 +103,7 @@ struct AgentCard: View {
 
     private var header: some View {
         HStack(spacing: 8) {
-            Image(systemName: "sparkles")
-                .font(.system(size: 13, weight: .semibold))
+            Icon("sparkles", size: 16)
                 .foregroundStyle(.tint)
             Text(session.phase == .composing ? "Ask Chord to do something on this page" : session.task)
                 .font(.system(size: 13, weight: .semibold))
@@ -124,7 +123,7 @@ struct AgentCard: View {
                 session.stop()
                 session.onClose()
             } label: {
-                Image(systemName: "xmark").font(.system(size: 10, weight: .bold)).foregroundStyle(.secondary)
+                Icon("x", size: 12).foregroundStyle(.secondary)
                     .frame(width: 20, height: 20).background(Circle().fill(.primary.opacity(0.08)))
             }
             .buttonStyle(ChromeButtonStyle(shape: .circle))
@@ -188,7 +187,7 @@ struct AgentCard: View {
         switch session.phase {
         case .confirming(let summary):
             HStack(spacing: 10) {
-                Image(systemName: "hand.raised.fill").foregroundStyle(.orange)
+                Icon("hand-stop", size: 17).foregroundStyle(.orange)
                 Text("Allow: \(summary)?").font(.system(size: 13, weight: .semibold)).lineLimit(2)
                 Spacer()
                 Button("Stop") { session.answer(false) }.buttonStyle(QuietButtonStyle())
@@ -204,7 +203,7 @@ struct AgentCard: View {
             }
         case .done(let outcome):
             HStack(alignment: .top, spacing: 10) {
-                Image(systemName: icon(for: outcome)).foregroundStyle(color(for: outcome))
+                Icon(icon(for: outcome), size: 17).foregroundStyle(color(for: outcome))
                 Text(message(for: outcome)).font(.system(size: 13)).textSelection(.enabled)
                 Spacer()
                 Button("New Task") { session.reset() }.buttonStyle(QuietButtonStyle())
@@ -225,9 +224,9 @@ struct AgentCard: View {
     }
 
     private func icon(for outcome: AgentOutcome) -> String {
-        if case .finished = outcome { return "checkmark.circle.fill" }
-        if case .failed = outcome { return "exclamationmark.triangle.fill" }
-        return "stop.circle"
+        if case .finished = outcome { return "circle-check-filled" }
+        if case .failed = outcome { return "alert-triangle-filled" }
+        return "player-stop"
     }
 
     private func color(for outcome: AgentOutcome) -> Color {
@@ -250,10 +249,10 @@ struct AgentModelSheet: View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Model for Page Actions").font(.system(size: 17, weight: .bold, design: .rounded))
             ProviderCard(title: "Apple Intelligence", detail: AppleAgentModel.unavailableReason ?? "Runs on this Mac. Nothing leaves it.",
-                         symbol: "apple.intelligence", selected: provider == .apple) { provider = .apple }
+                         symbol: "brand-apple", selected: provider == .apple) { provider = .apple }
             ProviderCard(title: "OpenAI-compatible server",
                          detail: "Ollama, LM Studio, vLLM, OpenRouter, or any server with /chat/completions.",
-                         symbol: "server.rack", selected: provider == .openAICompatible) { provider = .openAICompatible }
+                         symbol: "server", selected: provider == .openAICompatible) { provider = .openAICompatible }
             if provider == .openAICompatible {
                 VStack(spacing: 8) {
                     SheetField(label: "Server", text: $baseURL, prompt: "http://localhost:11434/v1")
@@ -294,14 +293,14 @@ private struct ProviderCard: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 12) {
-                Image(systemName: symbol).font(.system(size: 18)).frame(width: 28)
+                Icon(symbol, size: 22).frame(width: 28)
                     .foregroundStyle(selected ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title).font(.system(size: 13, weight: .semibold))
                     Text(detail).font(.system(size: 11)).foregroundStyle(.secondary)
                 }
                 Spacer()
-                Image(systemName: selected ? "checkmark.circle.fill" : "circle")
+                Icon(selected ? "circle-check-filled" : "circle", size: 18)
                     .foregroundStyle(selected ? AnyShapeStyle(.tint) : AnyShapeStyle(.tertiary))
             }
             .padding(12)

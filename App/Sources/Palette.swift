@@ -135,8 +135,7 @@ struct PaletteView: View {
 
     private var field: some View {
         HStack(spacing: 12) {
-            Image(systemName: model.mode == .newTab ? "plus.magnifyingglass" : "magnifyingglass")
-                .font(.system(size: 17, weight: .medium))
+            Icon(model.mode == .newTab ? "square-plus" : "search", size: 20)
                 .foregroundStyle(.secondary)
             TextField("", text: $model.query, selection: $model.selection,
                       prompt: Text(model.mode == .newTab ? "Search or enter address" : "Go to address, search, or run a command"))
@@ -230,8 +229,7 @@ private struct PaletteRow: View {
 
     /// A small symbol at the start of the row that says what kind of row it is.
     private var kindGlyph: some View {
-        Image(systemName: kind.symbol)
-            .font(.system(size: 11, weight: .semibold))
+        Icon(kind.symbol, size: 14)
             .foregroundStyle(selected ? AnyShapeStyle(.tint) : AnyShapeStyle(.tertiary))
             .frame(width: 14)
             .accessibilityLabel(kind.name)
@@ -240,18 +238,17 @@ private struct PaletteRow: View {
     /// The symbol and spoken name for each kind of row.
     private var kind: (symbol: String, name: String) {
         switch item {
-        case .navigate: ("arrow.up.right", "Address")
-        case .search: ("magnifyingglass", "Search")
-        case .tab: ("square.on.square", "Open tab")
-        case .history: ("clock.arrow.circlepath", "History")
-        case .bookmark: ("bookmark.fill", "Bookmark")
+        case .navigate: ("arrow-up-right", "Address")
+        case .search: ("search", "Search")
+        case .tab: ("browser", "Open tab")
+        case .history: ("history", "History")
+        case .bookmark: ("bookmark-filled", "Bookmark")
         case .command: ("command", "Command")
         }
     }
 
     private func symbol(_ name: String) -> some View {
-        Image(systemName: name)
-            .font(.system(size: 13, weight: .semibold))
+        Icon(name, size: 16)
             .foregroundStyle(.secondary)
             .frame(width: 22, height: 22)
             .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(.primary.opacity(0.08)))

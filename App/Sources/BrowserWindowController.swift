@@ -267,11 +267,11 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
         Task {
             do {
                 _ = try await service.save(url: tab.url, title: tab.title)
-                showToast("Saved to Karakeep", symbol: "bookmark.fill")
+                showToast("Saved to Karakeep", symbol: "bookmark-filled")
             } catch BookmarkServiceError.unauthorized {
-                showToast("Karakeep refused the API key", symbol: "exclamationmark.triangle.fill")
+                showToast("Karakeep refused the API key", symbol: "alert-triangle-filled")
             } catch {
-                showToast("Could not save to Karakeep", symbol: "exclamationmark.triangle.fill")
+                showToast("Could not save to Karakeep", symbol: "alert-triangle-filled")
             }
         }
     }
@@ -407,7 +407,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
     @objc func toggleDeveloperTools(_ sender: Any?) {
         guard let shownWebView else { return }
         if !WebInspector.toggle(shownWebView) {
-            showToast("Use Safari's Develop menu to inspect this page", symbol: "hammer")
+            showToast("Use Safari's Develop menu to inspect this page", symbol: "tool")
         }
     }
 
@@ -526,24 +526,24 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
     private func paletteCommands() -> [PaletteCommand] {
         var commands = [
             PaletteCommand(id: "new-tab", title: "New Tab", symbol: "plus", shortcut: "⌘T"),
-            PaletteCommand(id: "new-window", title: "New Window", symbol: "macwindow.badge.plus", shortcut: "⌘N"),
-            PaletteCommand(id: "toggle-sidebar", title: "Toggle Sidebar", symbol: "sidebar.left", shortcut: "⌘S"),
-            PaletteCommand(id: "reload", title: "Reload Page", symbol: "arrow.clockwise",
+            PaletteCommand(id: "new-window", title: "New Window", symbol: "browser-plus", shortcut: "⌘N"),
+            PaletteCommand(id: "toggle-sidebar", title: "Toggle Sidebar", symbol: "layout-sidebar", shortcut: "⌘S"),
+            PaletteCommand(id: "reload", title: "Reload Page", symbol: "reload",
                            keywords: ["refresh"], shortcut: "⌘R"),
-            PaletteCommand(id: "back", title: "Go Back", symbol: "chevron.left", shortcut: "⌘["),
-            PaletteCommand(id: "forward", title: "Go Forward", symbol: "chevron.right", shortcut: "⌘]"),
+            PaletteCommand(id: "back", title: "Go Back", symbol: "chevron-left", shortcut: "⌘["),
+            PaletteCommand(id: "forward", title: "Go Forward", symbol: "chevron-right", shortcut: "⌘]"),
             PaletteCommand(id: "copy-address", title: "Copy Address", symbol: "link",
                            keywords: ["url"], shortcut: "⇧⌘C"),
-            PaletteCommand(id: "close-tab", title: "Close Tab", symbol: "xmark", shortcut: "⌘W"),
+            PaletteCommand(id: "close-tab", title: "Close Tab", symbol: "x", shortcut: "⌘W"),
         ]
         if let group = state.activeGroup {
-            commands.append(PaletteCommand(id: "ungroup", title: "Ungroup Tabs", symbol: "rectangle.stack.badge.minus",
+            commands.append(PaletteCommand(id: "ungroup", title: "Ungroup Tabs", symbol: "stack-pop",
                                            keywords: ["group"]))
             commands.append(PaletteCommand(id: "group-new-tab", title: "New Tab in \(group.title.isEmpty ? "Group" : group.title)",
-                                           symbol: "plus.rectangle.on.rectangle", keywords: ["group"]))
+                                           symbol: "copy-plus", keywords: ["group"]))
         } else if let tab = state.activeTab, tab.section != .favorite, let matcher = URLMatcher.suggested(for: tab.url) {
             commands.append(PaletteCommand(id: "group", title: "Group Tabs from \(matcher.value)",
-                                           symbol: "rectangle.stack.badge.plus", keywords: ["group", "strip"]))
+                                           symbol: "stack-push", keywords: ["group", "strip"]))
         }
         if let tab = state.activeTab, !tab.isGroup, tab.parentTabID == nil {
             switch tab.section {
@@ -551,19 +551,19 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
                 commands.append(PaletteCommand(id: "pin-tab", title: "Pin Tab", symbol: "pin"))
                 commands.append(PaletteCommand(id: "favorite-tab", title: "Add to Favorites", symbol: "star"))
             case .pinned:
-                commands.append(PaletteCommand(id: "unpin-tab", title: "Unpin Tab", symbol: "pin.slash"))
+                commands.append(PaletteCommand(id: "unpin-tab", title: "Unpin Tab", symbol: "pinned-off"))
                 commands.append(PaletteCommand(id: "favorite-tab", title: "Add to Favorites", symbol: "star"))
             case .favorite:
                 commands.append(PaletteCommand(id: "unfavorite-tab", title: "Remove from Favorites",
-                                               symbol: "star.slash"))
+                                               symbol: "star-off"))
             }
         }
         commands.append(PaletteCommand(id: "air-traffic-control", title: "Air Traffic Control",
-                                       symbol: "point.3.filled.connected.trianglepath.dotted",
+                                       symbol: "route",
                                        keywords: ["rules", "routing", "route"], shortcut: "⌘,"))
         if state.activeTab != nil {
             commands.append(PaletteCommand(id: "route-site", title: "Route This Site…",
-                                           symbol: "arrow.triangle.branch", keywords: ["rule"]))
+                                           symbol: "arrow-fork", keywords: ["rule"]))
         }
         if appDelegate?.bookmarking?.isConnected == true {
             if state.activeTab != nil {
@@ -571,9 +571,9 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
                                                keywords: ["bookmark", "save"], shortcut: "⌘D"))
             }
             commands.append(PaletteCommand(id: "karakeep-connect", title: "Karakeep Connection…",
-                                           symbol: "bookmark.circle", keywords: ["bookmark"]))
+                                           symbol: "bookmarks", keywords: ["bookmark"]))
         } else {
-            commands.append(PaletteCommand(id: "karakeep-connect", title: "Connect Karakeep…", symbol: "bookmark.circle",
+            commands.append(PaletteCommand(id: "karakeep-connect", title: "Connect Karakeep…", symbol: "bookmarks",
                                            keywords: ["bookmark", "save"]))
         }
         if state.activeTab != nil {
@@ -582,26 +582,26 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
         }
         commands.append(PaletteCommand(id: "agent-model", title: "Model for Page Actions…", symbol: "cpu",
                                        keywords: ["agent", "ai", "ollama", "openai", "apple intelligence"]))
-        commands.append(PaletteCommand(id: "developer-tools", title: "Developer Tools", symbol: "hammer",
+        commands.append(PaletteCommand(id: "developer-tools", title: "Developer Tools", symbol: "tool",
                                        keywords: ["inspector", "inspect", "console", "devtools"], shortcut: "⌥⌘I"))
-        commands.append(PaletteCommand(id: "extensions", title: "Extensions", symbol: "puzzlepiece.extension",
+        commands.append(PaletteCommand(id: "extensions", title: "Extensions", symbol: "puzzle",
                                        keywords: ["plugin", "add-on", "1password"], shortcut: "⇧⌘E"))
         commands.append(PaletteCommand(id: "overtones-folder", title: "Open Overtones Folder", symbol: "folder",
                                        keywords: ["overtone", "css", "javascript"]))
-        commands.append(PaletteCommand(id: "overtones-reload", title: "Reload Overtones", symbol: "arrow.triangle.2.circlepath",
+        commands.append(PaletteCommand(id: "overtones-reload", title: "Reload Overtones", symbol: "refresh",
                                        keywords: ["overtone"]))
-        commands.append(PaletteCommand(id: "new-space", title: "New Space", symbol: "square.stack"))
+        commands.append(PaletteCommand(id: "new-space", title: "New Space", symbol: "stack-2"))
         for space in library.spaces where space.id != state.spaceID {
             commands.append(PaletteCommand(id: "space:\(space.id.uuidString)", title: "Switch to \(space.name)",
-                                           symbol: "square.stack", keywords: ["space"]))
+                                           symbol: "stack-2", keywords: ["space"]))
         }
         for engine in SearchEngine.presets where engine != library.searchEngine {
             commands.append(PaletteCommand(id: "engine:\(engine.id)", title: "Search with \(engine.name)",
-                                           symbol: "magnifyingglass", keywords: ["search engine", "default"]))
+                                           symbol: "search", keywords: ["search engine", "default"]))
         }
         if !DefaultBrowser.isDefault {
             commands.append(PaletteCommand(id: "default-browser", title: "Make Chord the Default Browser",
-                                           symbol: "globe", keywords: ["default"]))
+                                           symbol: "world", keywords: ["default"]))
         }
         commands.append(PaletteCommand(id: "clear-history", title: "Clear History", symbol: "trash"))
         return commands
@@ -780,8 +780,7 @@ private struct ElsewhereCard: View {
 
     var body: some View {
         VStack(spacing: 12) {
-            Image(systemName: "macwindow.on.rectangle")
-                .font(.system(size: 30, weight: .light))
+            Icon("app-window", size: 38)
                 .foregroundStyle(.tertiary)
             Text("This tab is showing in another window")
                 .font(.system(size: 14, weight: .semibold))

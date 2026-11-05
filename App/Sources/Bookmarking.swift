@@ -106,8 +106,7 @@ struct KarakeepConnectView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 12) {
-                Image(systemName: "bookmark.fill")
-                    .font(.system(size: 22, weight: .semibold))
+                Icon("bookmark-filled", size: 28)
                     .foregroundStyle(.tint)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Connect Karakeep").font(.system(size: 17, weight: .bold, design: .rounded))
@@ -119,7 +118,7 @@ struct KarakeepConnectView: View {
             LabeledField(label: "Server", text: $address, prompt: "https://karakeep.example.com", secure: false)
             LabeledField(label: "API key", text: $apiKey, prompt: "From Settings > API Keys in Karakeep", secure: true)
             if let problem {
-                Label(problem, systemImage: "exclamationmark.triangle.fill")
+                Label { Text(problem) } icon: { Icon("alert-triangle-filled", size: 15) }
                     .font(.system(size: 12))
                     .foregroundStyle(.orange)
             }
@@ -206,7 +205,7 @@ struct ToastView: View {
     @State private var shown = false
 
     var body: some View {
-        Label(text, systemImage: symbol)
+        Label { Text(text) } icon: { Icon(symbol, size: 16) }
             .font(.system(size: 13, weight: .semibold))
             .padding(.horizontal, 16)
             .frame(height: 36)

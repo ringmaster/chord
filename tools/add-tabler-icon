@@ -1,0 +1,52 @@
+#!/bin/sh
+# Adds Tabler icons (https://tabler.io/icons, MIT license) to the app's asset catalog.
+#
+# Usage: tools/add-tabler-icon outline/plus filled/bookmark ...
+#
+# An outline icon keeps its file name, such as "plus".
+# A filled icon gets "-filled" after its name, such as "bookmark-filled".
+# The app draws an icon with Icon("plus", size: 14).
+set -eu
+
+VERSION=3.50.0
+CATALOG="$(cd "$(dirname "$0")/.." && pwd)/App/Resources/Icons.xcassets/Tabler"
+
+if [ $# -eq 0 ]; then
+    echo "usage: $0 outline/NAME|filled/NAME ..." >&2
+    exit 1
+fi
+
+for spec in "$@"; do
+    style=${spec%%/*}
+    name=${spec#*/}
+    case $style in
+        outline) asset=$name ;;
+        filled) asset=$name-filled ;;
+        *) echo "$spec: the style must be outline or filled" >&2; exit 1 ;;
+    esac
+    dir="$CATALOG/$asset.imageset"
+    mkdir -p "$dir"
+    # The asset catalog does not read currentColor. The icons are template
+    # images, so only their shape matters, and black is as good as any color.
+    curl -fsSL "https://cdn.jsdelivr.net/npm/@tabler/icons@$VERSION/icons/$style/$name.svg" |
+        sed 's/currentColor/#000000/g' > "$dir/$asset.svg"
+    cat > "$dir/Contents.json" <<EOF
+{
+  "images" : [
+    {
+      "filename" : "$asset.svg",
+      "idiom" : "universal"
+    }
+  ],
+  "info" : {
+    "author" : "xcode",
+    "version" : 1
+  },
+  "properties" : {
+    "preserves-vector-representation" : true,
+    "template-rendering-intent" : "template"
+  }
+}
+EOF
+    echo "added $asset"
+done

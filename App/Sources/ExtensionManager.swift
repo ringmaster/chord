@@ -471,7 +471,7 @@ private struct PermissionPrompt: View {
                 if let icon {
                     Image(nsImage: icon).resizable().frame(width: 40, height: 40)
                 } else {
-                    Image(systemName: "puzzlepiece.extension").font(.system(size: 28)).frame(width: 40, height: 40)
+                    Icon("puzzle", size: 34).frame(width: 40, height: 40)
                 }
                 VStack(alignment: .leading, spacing: 2) {
                     Text(name).font(.system(size: 15, weight: .semibold))

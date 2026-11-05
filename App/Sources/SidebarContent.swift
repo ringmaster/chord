@@ -74,8 +74,7 @@ private struct AddressPill: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass")
-                    .font(.system(size: 11, weight: .semibold))
+                Icon("search", size: 14)
                     .foregroundStyle(.secondary)
                 Text(label)
                     .font(.system(size: 12, weight: .medium))
@@ -163,8 +162,7 @@ private struct TabRow: View {
             SiteIcon(url: tab.url, size: 16)
                 .overlay(alignment: .bottomTrailing) {
                     if tab.isGroup {
-                        Image(systemName: "rectangle.stack.fill")
-                            .font(.system(size: 7, weight: .bold))
+                        Icon("stack-2-filled", size: 9)
                             .foregroundStyle(.tint)
                             .padding(1.5)
                             .background(Circle().fill(.background))
@@ -190,8 +188,7 @@ private struct TabRow: View {
                 Button {
                     state.close(tab.id)
                 } label: {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 9, weight: .bold))
+                    Icon("x", size: 11)
                         .foregroundStyle(.secondary)
                         .frame(width: 18, height: 18)
                         .background(Circle().fill(.primary.opacity(0.08)))
@@ -228,8 +225,7 @@ private struct NewTabRow: View {
 
     var body: some View {
         HStack(spacing: 9) {
-            Image(systemName: "plus")
-                .font(.system(size: 11, weight: .semibold))
+            Icon("plus", size: 14)
                 .frame(width: 16, height: 16)
             Text("New Tab")
                 .font(.system(size: 12.5))
@@ -344,8 +340,7 @@ private struct SpaceSwitcher: View {
             Button {
                 state.createSpace(named: "Space \(state.library.spaces.count + 1)")
             } label: {
-                Image(systemName: "plus")
-                    .font(.system(size: 10, weight: .bold))
+                Icon("plus", size: 13)
                     .foregroundStyle(.secondary)
                     .frame(width: 22, height: 22)
                     .contentShape(Circle())
@@ -414,7 +409,7 @@ private struct ExtensionButton: View {
                     ?? webExtension.actionIcon(for: NSSize(width: 16, height: 16)) {
                     Image(nsImage: image).resizable().frame(width: 16, height: 16)
                 } else {
-                    Image(systemName: "puzzlepiece.extension").font(.system(size: 13))
+                    Icon("puzzle", size: 16)
                 }
             }
             .frame(width: 28, height: 28)

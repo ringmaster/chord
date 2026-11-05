@@ -76,8 +76,8 @@ struct PaletteResultsTests {
                      lastVisitedAt: Date(timeIntervalSince1970: 1_000_000))
     }
 
-    private let toggle = PaletteCommand(id: "toggle-sidebar", title: "Toggle Sidebar", symbol: "sidebar.left")
-    private let reload = PaletteCommand(id: "reload", title: "Reload Page", symbol: "arrow.clockwise",
+    private let toggle = PaletteCommand(id: "toggle-sidebar", title: "Toggle Sidebar", symbol: "layout-sidebar")
+    private let reload = PaletteCommand(id: "reload", title: "Reload Page", symbol: "reload",
                                         keywords: ["refresh"])
 
     @Test func emptyQueryShowsRecentTabsThenCommands() {

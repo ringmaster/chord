@@ -56,8 +56,7 @@ private struct HeaderTab: View {
                 Button {
                     state.close(tab.id)
                 } label: {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 8, weight: .bold))
+                    Icon("x", size: 10)
                         .foregroundStyle(.secondary)
                         .frame(width: 16, height: 16)
                         .background(Circle().fill(.primary.opacity(0.08)))
@@ -98,8 +97,7 @@ private struct NewHeaderTabButton: View {
 
     var body: some View {
         Button(action: action) {
-            Image(systemName: "plus")
-                .font(.system(size: 11, weight: .semibold))
+            Icon("plus", size: 14)
                 .foregroundStyle(.secondary)
                 .frame(width: 28, height: 28)
                 .background(RoundedRectangle(cornerRadius: 7, style: .continuous)

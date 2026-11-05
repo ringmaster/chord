@@ -96,8 +96,7 @@ private struct ExtensionsView: View {
 
     private var header: some View {
         HStack(alignment: .firstTextBaseline, spacing: 12) {
-            Image(systemName: "puzzlepiece.extension.fill")
-                .font(.system(size: 22, weight: .semibold))
+            Icon("puzzle-filled", size: 28)
                 .foregroundStyle(.tint)
             VStack(alignment: .leading, spacing: 3) {
                 Text("Extensions")
@@ -155,7 +154,7 @@ private struct ExtensionCard: View {
                         .lineLimit(2)
                 }
                 if let error = manager.loadErrors[item.id] {
-                    Label(error, systemImage: "exclamationmark.triangle.fill")
+                    Label { Text(error) } icon: { Icon("alert-triangle-filled", size: 15) }
                         .font(.system(size: 12))
                         .foregroundStyle(.orange)
                         .lineLimit(3)
@@ -172,8 +171,7 @@ private struct ExtensionCard: View {
                 Button {
                     manager.remove(item.id)
                 } label: {
-                    Image(systemName: "trash")
-                        .font(.system(size: 12))
+                    Icon("trash", size: 15)
                         .foregroundStyle(.secondary)
                         .frame(width: 24, height: 24)
                         .contentShape(Rectangle())
@@ -199,7 +197,7 @@ private struct ExtensionCard: View {
             RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .fill(.primary.opacity(0.08))
                 .frame(width: 40, height: 40)
-                .overlay(Image(systemName: "puzzlepiece.extension").foregroundStyle(.secondary))
+                .overlay(Icon("puzzle", size: 18).foregroundStyle(.secondary))
         }
     }
 
@@ -208,8 +206,7 @@ private struct ExtensionCard: View {
         let requested = loaded?.webExtension.allRequestedMatchPatterns.map(\.string).sorted() ?? []
         let granted = item.grantedMatchPatterns
         HStack(spacing: 8) {
-            Image(systemName: granted.isEmpty ? "lock" : "globe")
-                .font(.system(size: 11, weight: .semibold))
+            Icon(granted.isEmpty ? "lock" : "world", size: 14)
                 .foregroundStyle(granted.isEmpty ? .secondary : Color.accentColor)
             Text(siteSummary(granted: granted, requested: requested))
                 .font(.system(size: 12, weight: .medium))
