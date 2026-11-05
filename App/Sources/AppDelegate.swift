@@ -14,6 +14,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private(set) var overtones: OvertoneManager?
     private(set) var extensions: ExtensionManager?
     private(set) var bookmarking: Bookmarking?
+    private(set) var passwords: Passwords?
     private var extensionsWindow: ExtensionsWindowController?
     private var windows: [BrowserWindowController] = []
     private var minorWindows: [MinorChordWindowController] = []
@@ -42,6 +43,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let overtones = OvertoneManager(folder: overtonesFolder)
             self.overtones = overtones
             bookmarking = Bookmarking(library: library)
+            passwords = Passwords()
             let extensions = ExtensionManager(database: database)
             self.extensions = extensions
             sessions = TabSessions(library: library, overtoneManager: overtones,
@@ -97,6 +99,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Task {
                 try? await Task.sleep(for: .seconds(1))
                 first?.run("agent-model")
+            }
+        }
+        // `--args -ChordFillLogin YES` runs Fill Login after the page loads,
+        // for testing against a stub op tool.
+        if UserDefaults.standard.bool(forKey: "ChordFillLogin") {
+            Task {
+                try? await Task.sleep(for: .seconds(4))
+                first?.fillLogin(nil)
             }
         }
         // `--args -ChordShowExtensions YES` opens the Extensions window, for screenshots.
@@ -388,6 +398,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         editMenu.addItem(withTitle: "Copy Address", action: #selector(BrowserWindowController.copyAddress(_:)),
                          keyEquivalent: "C")
         editMenu.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        editMenu.addItem(.separator())
+        editMenu.addItem(withTitle: "Fill Login from 1Password", action: #selector(BrowserWindowController.fillLogin(_:)),
+                         keyEquivalent: "\\")
         mainMenu.addItem(submenu(editMenu))
 
         let viewMenu = NSMenu(title: "View")

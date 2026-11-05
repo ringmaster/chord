@@ -100,6 +100,12 @@ struct PaletteResultsTests {
         #expect(items.first == .navigate(URL(string: "https://example.com")!))
     }
 
+    @Test func anExtensionPageAddressOpensRatherThanSearches() {
+        let address = "webkit-extension://ecd804b2-d72f-4f21-858e-7f5d233924bd/app/app.html#/page/welcome"
+        let items = PaletteResults.build(query: address, tabs: [], commands: [], history: [], engine: engine)
+        #expect(items.first == .navigate(URL(string: address)!))
+    }
+
     @Test func wordsSearchFirst() {
         let items = PaletteResults.build(query: "swift", tabs: [], commands: [], history: [], engine: engine)
         guard case .search(let query, let usedEngine, let url) = items.first else {
