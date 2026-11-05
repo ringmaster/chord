@@ -27,6 +27,9 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
     private let dragStrip = DragStripView()
     private let edgeHotZone = EdgeHotZoneView()
     private var sidebar: SidebarView!
+    /// The group's header tabs, above the page while a group is shown.
+    private var headerStrip: NSView!
+    private var showsHeaderStrip = false
 
     private var paletteHost: NSView?
     private var paletteModel: PaletteModel?
@@ -73,6 +76,9 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
             state: state,
             onOpenPalette: { [weak self] in self?.openPalette(nil) },
             onNewTab: { [weak self] in self?.newTab(nil) }))
+        headerStrip = NSHostingView(rootView: HeaderStrip(
+            state: state,
+            onNewTab: { [weak self] groupID in self?.showPalette(mode: .newTab, initialText: "", groupID: groupID) }))
         buildViews()
         applyFlyoutState(animated: false)
 
@@ -92,6 +98,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
         pageContainer.layer?.masksToBounds = true
 
         rootView.addSubview(pageContainer)
+        rootView.addSubview(headerStrip)
         rootView.addSubview(dragStrip)
         rootView.addSubview(edgeHotZone)
         rootView.addSubview(sidebar)
@@ -115,14 +122,27 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
                      width: bounds.width - Design.Sidebar.width - inset * 3,
                      height: bounds.height - inset * 2)
             : bounds
-        pageContainer.frame = pageFrame
+        // The header strip, when shown, takes the top of the page area.
+        let stripHeight = showsHeaderStrip ? Design.Page.headerStripHeight : 0
+        headerStrip.isHidden = !showsHeaderStrip
+        headerStrip.frame = NSRect(x: pageFrame.minX, y: pageFrame.maxY - stripHeight,
+                                   width: pageFrame.width, height: stripHeight)
+        pageContainer.frame = NSRect(x: pageFrame.minX, y: pageFrame.minY,
+                                     width: pageFrame.width, height: pageFrame.height - stripHeight)
         pageContainer.layer?.cornerRadius = pagePinned ? Design.Page.cornerRadius : 0
+        // Below a header strip, only the page's bottom corners are rounded.
+        pageContainer.layer?.maskedCorners = showsHeaderStrip
+            ? [.layerMinXMinYCorner, .layerMaxXMinYCorner]
+            : [.layerMinXMinYCorner, .layerMaxXMinYCorner, .layerMinXMaxYCorner, .layerMaxXMaxYCorner]
         shownWebView?.frame = pageContainer.bounds
         elsewhereView?.frame = pageContainer.bounds
 
         let strip = Design.Edge.dragStripHeight
         dragStrip.frame = NSRect(x: pageFrame.minX, y: bounds.height - strip,
                                  width: pageFrame.width, height: strip)
+        // The header strip drags the window itself, so the drag strip would
+        // only block clicks on the header tabs.
+        dragStrip.isHidden = showsHeaderStrip
         edgeHotZone.frame = NSRect(x: 0, y: 0, width: Design.Edge.hotZoneWidth, height: bounds.height)
         edgeHotZone.isHidden = pagePinned
         sidebar.frame = sidebarFrame(visible: flyout.isVisible)
@@ -146,6 +166,11 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
     private func showActiveTab() {
         state.reconcile()
         sessions.prune(keeping: library.allTabs)
+        let wantsStrip = state.activeGroup != nil
+        if wantsStrip != showsHeaderStrip {
+            showsHeaderStrip = wantsStrip
+            layoutChrome()
+        }
         guard let tab = state.activeTab else {
             removeShownWebView()
             showElsewhereCard(false)
@@ -241,12 +266,13 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
 
     // MARK: Command palette
 
-    func showPalette(mode: PaletteMode, initialText: String) {
+    /// Opens the palette. With `groupID`, new tabs from it open in that group.
+    func showPalette(mode: PaletteMode, initialText: String, groupID: UUID? = nil) {
         dismissPalette()
         let model = PaletteModel(
             mode: mode, initialText: initialText, library: library, tabs: state.visibleTabs,
             commands: paletteCommands(),
-            onPerform: { [weak self] item, mode in self?.perform(item, mode: mode) },
+            onPerform: { [weak self] item, mode in self?.perform(item, mode: mode, groupID: groupID) },
             onDismiss: { [weak self] in self?.dismissPalette() })
         let host = NSHostingView(rootView: PaletteView(model: model))
         host.frame = rootView.bounds
@@ -309,12 +335,12 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
         }
     }
 
-    private func perform(_ item: PaletteItem, mode: PaletteMode) {
+    private func perform(_ item: PaletteItem, mode: PaletteMode, groupID: UUID?) {
         switch item {
         case .navigate(let url), .search(_, _, let url):
-            load(url, mode: mode)
+            load(url, mode: mode, groupID: groupID)
         case .history(let entry):
-            load(entry.url, mode: mode)
+            load(entry.url, mode: mode, groupID: groupID)
         case .tab(let tab):
             state.activate(tab.id)
         case .command(let command):
@@ -322,9 +348,11 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
         }
     }
 
-    private func load(_ url: URL, mode: PaletteMode) {
+    private func load(_ url: URL, mode: PaletteMode, groupID: UUID?) {
         if mode == .currentTab, let shownWebView {
             shownWebView.load(URLRequest(url: url))
+        } else if let groupID {
+            state.openTab(url, inGroup: groupID)
         } else if let appDelegate {
             appDelegate.route(url, from: self)
         } else {
@@ -346,7 +374,16 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
                            keywords: ["url"], shortcut: "⇧⌘C"),
             PaletteCommand(id: "close-tab", title: "Close Tab", symbol: "xmark", shortcut: "⌘W"),
         ]
-        if let tab = state.activeTab {
+        if let group = state.activeGroup {
+            commands.append(PaletteCommand(id: "ungroup", title: "Ungroup Tabs", symbol: "rectangle.stack.badge.minus",
+                                           keywords: ["group"]))
+            commands.append(PaletteCommand(id: "group-new-tab", title: "New Tab in \(group.title.isEmpty ? "Group" : group.title)",
+                                           symbol: "plus.rectangle.on.rectangle", keywords: ["group"]))
+        } else if let tab = state.activeTab, tab.section != .favorite, let matcher = URLMatcher.suggested(for: tab.url) {
+            commands.append(PaletteCommand(id: "group", title: "Group Tabs from \(matcher.value)",
+                                           symbol: "rectangle.stack.badge.plus", keywords: ["group", "strip"]))
+        }
+        if let tab = state.activeTab, !tab.isGroup, tab.parentTabID == nil {
             switch tab.section {
             case .open:
                 commands.append(PaletteCommand(id: "pin-tab", title: "Pin Tab", symbol: "pin"))
@@ -398,6 +435,15 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
         switch commandID {
         case "new-tab": newTab(nil)
         case "new-window": appDelegate?.newWindow(nil)
+        case "group":
+            if let tab = state.activeTab, let matcher = URLMatcher.suggested(for: tab.url) {
+                library.makeGroup(tab.id, matcher: matcher)
+            }
+        case "ungroup": state.activeGroup.map { library.ungroup($0.id) }
+        case "group-new-tab":
+            if let group = state.activeGroup {
+                showPalette(mode: .newTab, initialText: "", groupID: group.id)
+            }
         case "toggle-sidebar": toggleSidebar(nil)
         case "reload": reloadPage(nil)
         case "back": goBack(nil)

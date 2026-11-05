@@ -54,6 +54,7 @@ Change `project.yml`, never the generated project.
 - `BrowserWindowController` lays out the page, the sidebar, the drag strip, and the window buttons in code. `keepUpdated` in `Observe.swift` keeps AppKit views in step with `Library`.
 - The command palette (`Palette.swift`) is a SwiftUI overlay. `PaletteResults` in `chord_logic` decides its rows; `BrowserWindowController.paletteCommands()` lists the commands that apply now, and `run(_:)` runs them by id.
 - Air Traffic Control (`AirTrafficControl.swift`) is its own window. `RuleEngine` in `chord_logic` decides routes; `Library.destination(for:)` and `AppDelegate.route(_:)` apply them to links from other apps and to new tabs from the palette.
+- A tab group is a sidebar tab with a `groupMatcher`. Its members have `parentTabID` set and show in `HeaderStrip` above the page, not in the sidebar. `WindowState.openTab(_:)` is the one place new tabs are created, and it puts a matching URL into its group; links from other apps, palette tabs, and windows a site opens all go through it.
 - SwiftUI is used inside AppKit containers, for example `SidebarContent` inside the glass sidebar card. Build custom rows and controls; do not use `List`, `Form`, or stock-styled controls.
 - `Packages/chord_logic` is a local Swift package for logic that does not need AppKit or WebKit. Put testable logic here so `swift test` covers it without launching the app. The app shell has no headless tests.
 - Tests use Swift Testing (`import Testing`, `@Test`, `#expect`).

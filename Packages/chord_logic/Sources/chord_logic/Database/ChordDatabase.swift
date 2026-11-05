@@ -117,6 +117,13 @@ public final class ChordDatabase: Sendable {
             }
         }
 
+        migrator.registerMigration("v3-tab-groups") { db in
+            try db.alter(table: "tab") { t in
+                t.add(column: "parentTabID", .blob).indexed().references("tab", onDelete: .cascade)
+                t.add(column: "groupMatcher", .text)
+            }
+        }
+
         return migrator
     }
 

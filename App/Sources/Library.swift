@@ -31,12 +31,19 @@ final class Library {
         didSet { save(.sidebarPinned, sidebarPinned ? "1" : "0") }
     }
 
-    /// Every tab in every space, without repeats.
+    /// Every tab in every space, group members included, without repeats.
     var allTabs: [BrowserTab] {
         var seen: Set<UUID> = []
         return contentsBySpace.values
-            .flatMap { $0.favorites + $0.pinned + $0.open }
+            .flatMap { $0.favorites + $0.pinned + $0.open + $0.members.values.flatMap { $0 } }
             .filter { seen.insert($0.id).inserted }
+    }
+
+    /// Every tab group, in space order.
+    var groups: [BrowserTab] {
+        spaces.flatMap { space in
+            (contentsBySpace[space.id].map { $0.pinned + $0.open } ?? []).filter(\.isGroup)
+        }
     }
 
     init(database: ChordDatabase) throws {
@@ -108,6 +115,37 @@ final class Library {
     func move(_ tabID: UUID, to section: TabSection, inSpace spaceID: UUID) {
         attempt("move tab") {
             try database.move(tabID: tabID, to: section, inSpace: spaceID)
+            try reloadAll()
+        }
+    }
+
+    @discardableResult
+    func openTab(_ url: URL, inGroup groupID: UUID) -> BrowserTab? {
+        var opened: BrowserTab?
+        attempt("open tab in group") {
+            opened = try database.openTab(url: url, inGroup: groupID)
+            try reloadAll()
+        }
+        return opened
+    }
+
+    func makeGroup(_ tabID: UUID, matcher: URLMatcher) {
+        attempt("make group") {
+            try database.makeGroup(tabID: tabID, matcher: matcher)
+            try reloadAll()
+        }
+    }
+
+    func setGroupMatcher(_ tabID: UUID, matcher: URLMatcher) {
+        attempt("change group matcher") {
+            try database.setGroupMatcher(tabID: tabID, matcher: matcher)
+            try reloadAll()
+        }
+    }
+
+    func ungroup(_ tabID: UUID) {
+        attempt("ungroup") {
+            try database.ungroup(tabID: tabID)
             try reloadAll()
         }
     }
@@ -261,8 +299,19 @@ final class WindowState {
 
     var space: Space { contents.space }
 
-    /// The tabs the sidebar shows, in sidebar order.
-    var visibleTabs: [BrowserTab] { contents.favorites + contents.pinned + contents.open }
+    /// Every tab in this window's space, in sidebar order, with each group's
+    /// members after the group.
+    var visibleTabs: [BrowserTab] {
+        let contents = contents
+        return contents.favorites + (contents.pinned + contents.open).flatMap { tab in
+            [tab] + (contents.members[tab.id] ?? [])
+        }
+    }
+
+    /// The group whose strip shows the active tab, if any.
+    var activeGroup: BrowserTab? {
+        activeTabID.flatMap { contents.group(containing: $0) }
+    }
 
     var activeTab: BrowserTab? {
         guard let activeTabID else { return nil }
@@ -287,20 +336,45 @@ final class WindowState {
         library.activate(tabID)
     }
 
-    /// Opens `url` in a new tab in this window's space and shows it.
+    /// Opens `url` in a new tab in this window's space and shows it. When a
+    /// group in the space matches `url`, the tab opens in that group's strip.
     @discardableResult
     func openTab(_ url: URL) -> BrowserTab? {
+        if let group = contents.group(for: url) {
+            return openTab(url, inGroup: group.id)
+        }
         guard let tab = library.openTab(url, inSpace: spaceID) else { return nil }
         activeTabID = tab.id
         return tab
     }
 
-    /// Closes a tab. When it was the active tab, the next tab down becomes
-    /// active, or the one above when the closed tab was last.
+    /// Opens `url` at the end of a group's strip and shows it.
+    @discardableResult
+    func openTab(_ url: URL, inGroup groupID: UUID) -> BrowserTab? {
+        guard let tab = library.openTab(url, inGroup: groupID) else { return nil }
+        activeTabID = tab.id
+        return tab
+    }
+
+    /// Shows a group: the strip tab used most recently.
+    func activateGroup(_ groupID: UUID) {
+        let strip = contents.strip(ofGroup: groupID)
+        let recent = strip.max { ($0.lastActivatedAt ?? .distantPast) < ($1.lastActivatedAt ?? .distantPast) }
+        activate(recent?.id ?? groupID)
+    }
+
+    /// Closes a tab. When it was the active tab, a neighbor becomes active: in
+    /// a group's strip, the tab to its left; elsewhere, the next tab down, or
+    /// the one above when the closed tab was last.
     func close(_ tabID: UUID) {
+        let group = contents.group(containing: tabID)
+        let strip = group.map { contents.strip(ofGroup: $0.id).map(\.id) } ?? []
         let order = visibleTabs.map(\.id)
         library.close(tabID)
-        if activeTabID == tabID {
+        guard activeTabID == tabID else { return }
+        if let group, group.id != tabID, let index = strip.firstIndex(of: tabID) {
+            activeTabID = strip[max(0, index - 1)]
+        } else {
             activeTabID = neighbor(of: tabID, in: order)
         }
     }

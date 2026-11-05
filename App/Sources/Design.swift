@@ -27,6 +27,8 @@ enum Design {
     enum Page {
         /// The corner radius of the page when it sits beside the pinned sidebar.
         static let cornerRadius: CGFloat = 10
+        /// The height of a tab group's header strip above the page.
+        static let headerStripHeight: CGFloat = 38
     }
 
     enum Edge {

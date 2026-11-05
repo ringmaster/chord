@@ -144,17 +144,41 @@ private struct TabRow: View {
     let state: WindowState
     @State private var hovering = false
 
-    private var active: Bool { tab.id == state.activeTabID }
+    /// A group row is active while any tab in its strip is shown.
+    private var active: Bool {
+        tab.isGroup ? state.activeGroup?.id == tab.id : tab.id == state.activeTabID
+    }
+
+    private var memberCount: Int { state.contents.members[tab.id]?.count ?? 0 }
 
     var body: some View {
         HStack(spacing: 9) {
             SiteIcon(url: tab.url, size: 16)
+                .overlay(alignment: .bottomTrailing) {
+                    if tab.isGroup {
+                        Image(systemName: "rectangle.stack.fill")
+                            .font(.system(size: 7, weight: .bold))
+                            .foregroundStyle(.tint)
+                            .padding(1.5)
+                            .background(Circle().fill(.background))
+                            .offset(x: 4, y: 4)
+                    }
+                }
             Text(title)
                 .font(.system(size: 12.5, weight: active ? .semibold : .regular))
                 .foregroundStyle(.primary.opacity(active ? 1 : 0.85))
                 .lineLimit(1)
                 .truncationMode(.tail)
             Spacer(minLength: 0)
+            if tab.isGroup && !hovering && memberCount > 0 {
+                Text("\(memberCount + 1)")
+                    .font(.system(size: 10, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 6)
+                    .frame(height: 16)
+                    .background(Capsule().fill(.primary.opacity(0.08)))
+                    .help("\(memberCount + 1) tabs in this group")
+            }
             if hovering {
                 Button {
                     state.close(tab.id)
@@ -176,7 +200,9 @@ private struct TabRow: View {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .fill(.primary.opacity(active ? 0.13 : hovering ? 0.06 : 0)))
         .contentShape(Rectangle())
-        .onTapGesture { state.activate(tab.id) }
+        .onTapGesture {
+            if tab.isGroup { state.activateGroup(tab.id) } else { state.activate(tab.id) }
+        }
         .onHover { hovering = $0 }
         .animation(.easeOut(duration: 0.12), value: hovering)
         .animation(.easeOut(duration: 0.12), value: active)
@@ -231,7 +257,14 @@ private struct TabMenu: View {
     let state: WindowState
 
     var body: some View {
-        if tab.section != .favorite {
+        if tab.isGroup {
+            Button("Ungroup Tabs") { state.library.ungroup(tab.id) }
+        } else if tab.section != .favorite, let matcher = URLMatcher.suggested(for: tab.url) {
+            Button("Group Tabs from \(matcher.value)") { state.library.makeGroup(tab.id, matcher: matcher) }
+        }
+        if tab.isGroup {
+            // A group cannot be a favorite.
+        } else if tab.section != .favorite {
             Button("Add to Favorites") { state.move(tab.id, to: .favorite) }
         } else {
             Button("Remove from Favorites") { state.move(tab.id, to: .pinned) }
@@ -247,7 +280,7 @@ private struct TabMenu: View {
             NSPasteboard.general.setString(tab.url.absoluteString, forType: .string)
         }
         Divider()
-        Button("Close Tab") { state.close(tab.id) }
+        Button(tab.isGroup ? "Close Group" : "Close Tab") { state.close(tab.id) }
     }
 }
 

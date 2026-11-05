@@ -88,6 +88,19 @@ final class AirTrafficControlModel {
         testURL.map(library.decide)
     }
 
+    /// The group the tested link would open in: a group in the space the
+    /// link is routed to, or in the space a new rule would route to.
+    var testGroup: BrowserTab? {
+        guard let url = testURL else { return nil }
+        let spaceID: UUID
+        if case .space(let routed) = library.decide(url).route {
+            spaceID = routed
+        } else {
+            spaceID = newRuleSpaceID ?? library.lastSpaceID
+        }
+        return library.contents(of: spaceID)?.group(for: url)
+    }
+
     func addRule(_ matcher: URLMatcher) {
         let route = Route.space(newRuleSpaceID ?? library.lastSpaceID)
         if let rule = library.addRule(matcher: matcher, actions: RuleActions(route: route)) {
@@ -136,6 +149,7 @@ struct AirTrafficControlView: View {
                         if !model.library.rules.isEmpty {
                             AddRuleButton(action: model.addEmptyRule)
                         }
+                        GroupSection(model: model)
                     }
                     .padding(.horizontal, 32)
                     .padding(.bottom, 32)
@@ -227,6 +241,11 @@ private struct TestResult: View {
                 .font(.system(size: 11, weight: .bold))
                 .foregroundStyle(.secondary)
             DestinationLabel(route: decision.route, library: model.library, fallback: true)
+            if let group = model.testGroup {
+                Text("· \(group.title.isEmpty ? "a" : group.title) group")
+                    .font(.system(size: 13, weight: .semibold))
+                    .lineLimit(1)
+            }
             Spacer(minLength: 8)
             if decision.route == nil, let matcher = URLMatcher.suggested(for: url) {
                 Button {
@@ -389,17 +408,30 @@ private struct FlowSentence: View {
     var body: some View {
         FlowLayout(spacing: 6, lineSpacing: 6) {
             Word("Links to")
-            MatcherValuePill(rule: rule, library: library)
-            if rule.matcher.scope != .pattern {
-                ScopePill(rule: rule, library: library)
-                PathPill(rule: rule, library: library)
-            } else {
-                ScopePill(rule: rule, library: library)
+            MatcherPills(matcher: rule.matcher) { matcher in
+                var updated = rule
+                updated.matcher = matcher
+                library.updateRule(updated)
             }
             Word("open in")
             RoutePill(rule: rule, library: library)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+/// The value, scope, and path pills for one matcher. The path pill is left
+/// out for a pattern, which already covers the whole link.
+private struct MatcherPills: View {
+    let matcher: URLMatcher
+    let onChange: (URLMatcher) -> Void
+
+    var body: some View {
+        MatcherValuePill(matcher: matcher, onChange: onChange)
+        ScopePill(matcher: matcher, onChange: onChange)
+        if matcher.scope != .pattern {
+            PathPill(matcher: matcher, onChange: onChange)
+        }
     }
 }
 
@@ -417,15 +449,15 @@ private struct Word: View {
 
 /// The host, domain, or pattern, edited in place. It turns red when invalid.
 private struct MatcherValuePill: View {
-    let rule: Rule
-    let library: Library
+    let matcher: URLMatcher
+    let onChange: (URLMatcher) -> Void
     @State private var text = ""
     @FocusState private var focused: Bool
 
     var body: some View {
-        TextField("", text: $text, prompt: Text(rule.matcher.scope == .pattern ? "pattern" : "example.com"))
+        TextField("", text: $text, prompt: Text(matcher.scope == .pattern ? "pattern" : "example.com"))
             .textFieldStyle(.plain)
-            .font(.system(size: 13, weight: .semibold, design: rule.matcher.scope == .pattern ? .monospaced : .default))
+            .font(.system(size: 13, weight: .semibold, design: matcher.scope == .pattern ? .monospaced : .default))
             .focused($focused)
             .fixedSize()
             .frame(minWidth: 90, alignment: .leading)
@@ -433,19 +465,19 @@ private struct MatcherValuePill: View {
             .frame(height: 26)
             .background(Capsule().fill(fill))
             .overlay(Capsule().strokeBorder(focused ? Color.accentColor.opacity(0.7) : .clear, lineWidth: 1))
-            .onAppear { text = rule.matcher.value }
-            .onChange(of: rule.matcher.value) { _, value in if !focused { text = value } }
+            .onAppear { text = matcher.value }
+            .onChange(of: matcher.value) { _, value in if !focused { text = value } }
             .onChange(of: focused) { _, isFocused in if !isFocused { commit() } }
             .onSubmit(commit)
-            .help(rule.matcher.isValid ? "" : invalidHelp)
+            .help(matcher.isValid ? "" : invalidHelp)
             .onAppear {
-                // A new, empty rule starts with its value ready for typing.
-                if rule.matcher.value.isEmpty { focused = true }
+                // A new, empty matcher starts with its value ready for typing.
+                if matcher.value.isEmpty { focused = true }
             }
     }
 
     private var draft: URLMatcher {
-        var matcher = rule.matcher
+        var matcher = matcher
         matcher.value = text.trimmingCharacters(in: .whitespaces).lowercased()
         if matcher.scope == .pattern { matcher.value = text.trimmingCharacters(in: .whitespaces) }
         return matcher
@@ -456,39 +488,37 @@ private struct MatcherValuePill: View {
     }
 
     private var invalidHelp: String {
-        rule.matcher.scope == .pattern ? "This is not a valid regular expression." : "Enter a host name with no spaces or slashes."
+        matcher.scope == .pattern ? "This is not a valid regular expression." : "Enter a host name with no spaces or slashes."
     }
 
     private func commit() {
-        guard draft != rule.matcher else { return }
-        var updated = rule
-        updated.matcher = draft
-        library.updateRule(updated)
+        guard draft != matcher else { return }
+        onChange(draft)
     }
 }
 
 /// "only", "and its subdomains", or "matching the pattern".
 private struct ScopePill: View {
-    let rule: Rule
-    let library: Library
+    let matcher: URLMatcher
+    let onChange: (URLMatcher) -> Void
     @State private var open = false
 
     var body: some View {
         ChoicePill(title: title, open: $open) {
             ChoiceList {
                 ChoiceRow(title: "and its subdomains", detail: "datadoghq.com also covers app.datadoghq.com",
-                          symbol: "square.3.layers.3d", selected: rule.matcher.scope == .domain) { set(.domain) }
+                          symbol: "square.3.layers.3d", selected: matcher.scope == .domain) { set(.domain) }
                 ChoiceRow(title: "only", detail: "Just this host. www. is ignored",
-                          symbol: "square", selected: rule.matcher.scope == .host) { set(.host) }
+                          symbol: "square", selected: matcher.scope == .host) { set(.host) }
                 ChoiceRow(title: "as a pattern", detail: "A regular expression tested against the whole link",
                           symbol: "chevron.left.forwardslash.chevron.right",
-                          selected: rule.matcher.scope == .pattern) { set(.pattern) }
+                          selected: matcher.scope == .pattern) { set(.pattern) }
             }
         }
     }
 
     private var title: String {
-        switch rule.matcher.scope {
+        switch matcher.scope {
         case .domain: "and its subdomains"
         case .host: "only"
         case .pattern: "as a pattern"
@@ -497,16 +527,16 @@ private struct ScopePill: View {
 
     private func set(_ scope: URLMatcher.Scope) {
         open = false
-        var updated = rule
-        updated.matcher.scope = scope
-        library.updateRule(updated)
+        var updated = matcher
+        updated.scope = scope
+        onChange(updated)
     }
 }
 
 /// "on any path", or "under /docs", edited in a popover.
 private struct PathPill: View {
-    let rule: Rule
-    let library: Library
+    let matcher: URLMatcher
+    let onChange: (URLMatcher) -> Void
     @State private var open = false
     @State private var text = ""
 
@@ -532,21 +562,21 @@ private struct PathPill: View {
                 }
             }
             .padding(14)
-            .onAppear { text = rule.matcher.pathPrefix ?? "" }
+            .onAppear { text = matcher.pathPrefix ?? "" }
         }
     }
 
     private var title: String {
-        guard let path = rule.matcher.pathPrefix, !path.isEmpty, path != "/" else { return "on any path" }
+        guard let path = matcher.pathPrefix, !path.isEmpty, path != "/" else { return "on any path" }
         return "under \(path.hasPrefix("/") ? path : "/" + path)"
     }
 
     private func commit() {
         open = false
-        var updated = rule
+        var updated = matcher
         let trimmed = text.trimmingCharacters(in: .whitespaces)
-        updated.matcher.pathPrefix = trimmed.isEmpty ? nil : trimmed
-        library.updateRule(updated)
+        updated.pathPrefix = trimmed.isEmpty ? nil : trimmed
+        onChange(updated)
     }
 }
 
@@ -809,5 +839,104 @@ struct QuietButtonStyle: ButtonStyle {
             .background(Capsule().fill(prominent ? Color.accentColor.opacity(configuration.isPressed ? 0.3 : 0.2)
                                                  : .primary.opacity(configuration.isPressed ? 0.12 : 0.07)))
             .foregroundStyle(prominent ? AnyShapeStyle(.tint) : AnyShapeStyle(.primary))
+    }
+}
+
+// MARK: Tab groups
+
+/// The heading and cards for tab groups. A group is made from a sidebar tab
+/// with "Group Tabs from…"; here its match rule is edited.
+private struct GroupSection: View {
+    let model: AirTrafficControlModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Tab groups")
+                    .font(.system(size: 15, weight: .semibold))
+                Text("New tabs that match a group open in its strip of header tabs, including windows the site opens.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.top, 18)
+            if model.library.groups.isEmpty {
+                Text("Right-click a sidebar tab and choose Group Tabs to make a group.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.tertiary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(14)
+                    .background(RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .strokeBorder(.primary.opacity(0.1), style: StrokeStyle(lineWidth: 1, dash: [5, 4])))
+            }
+            ForEach(model.library.groups) { group in
+                GroupCard(group: group, model: model)
+            }
+        }
+    }
+}
+
+private struct GroupCard: View {
+    let group: BrowserTab
+    let model: AirTrafficControlModel
+    @State private var hovering = false
+
+    private var library: Library { model.library }
+    private var matchesTest: Bool {
+        guard let url = model.testURL, let matcher = group.groupMatcher else { return false }
+        return matcher.isValid && matcher.matches(url)
+    }
+
+    var body: some View {
+        HStack(spacing: 12) {
+            SiteIcon(url: group.url, size: 18)
+                .padding(.leading, 6)
+            FlowLayout(spacing: 6, lineSpacing: 6) {
+                Word("Tabs for")
+                if let matcher = group.groupMatcher {
+                    MatcherPills(matcher: matcher) { library.setGroupMatcher(group.id, matcher: $0) }
+                }
+                Word("open in the")
+                Text(groupName)
+                    .font(.system(size: 13, weight: .semibold))
+                    .lineLimit(1)
+                    .frame(maxWidth: 180, alignment: .leading)
+                    .fixedSize(horizontal: true, vertical: false)
+                Word("group in \(spaceName)")
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .layoutPriority(-1)
+
+            if matchesTest {
+                Badge(text: "Matches", tint: .accentColor)
+            }
+            Button {
+                withAnimation(.easeOut(duration: 0.2)) { library.ungroup(group.id) }
+            } label: {
+                Image(systemName: "rectangle.stack.badge.minus")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 26, height: 26)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .opacity(hovering ? 1 : 0)
+            .help("Ungroup: the tabs go back to the sidebar")
+        }
+        .padding(.trailing, 12)
+        .padding(.vertical, 12)
+        .background(RoundedRectangle(cornerRadius: 14, style: .continuous)
+            .fill(.primary.opacity(hovering ? 0.07 : 0.045)))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
+            .strokeBorder(matchesTest ? Color.accentColor.opacity(0.6) : .primary.opacity(0.07), lineWidth: 1))
+        .onHover { hovering = $0 }
+        .animation(.easeOut(duration: 0.15), value: hovering)
+    }
+
+    private var groupName: String {
+        group.title.isEmpty ? (group.url.host() ?? "Untitled") : group.title
+    }
+
+    private var spaceName: String {
+        library.spaces.first { $0.id == group.spaceID }?.name ?? "a missing space"
     }
 }

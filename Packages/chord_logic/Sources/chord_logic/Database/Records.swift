@@ -48,6 +48,11 @@ public enum TabSection: String, Codable, Sendable, CaseIterable, DatabaseValueCo
 ///
 /// A favorite belongs to a profile and has no space. Pinned and open tabs
 /// belong to a space, and their profile is the space's profile.
+///
+/// A pinned or open tab with a `groupMatcher` is a tab group. New tabs whose
+/// address matches open inside it, as header tabs across the top of the page.
+/// Those member tabs have `parentTabID` set to the group's id and do not show
+/// in the sidebar themselves.
 public struct BrowserTab: Codable, Equatable, Identifiable, Sendable, FetchableRecord, PersistableRecord {
     public var id: UUID
     public var profileID: UUID
@@ -58,9 +63,16 @@ public struct BrowserTab: Codable, Equatable, Identifiable, Sendable, FetchableR
     public var url: URL
     public var title: String
     public var lastActivatedAt: Date?
+    /// The group this tab is a member of.
+    public var parentTabID: UUID?
+    /// Set when this tab is a group: the URLs that open inside it.
+    public var groupMatcher: URLMatcher?
+
+    public var isGroup: Bool { groupMatcher != nil }
 
     public init(id: UUID = UUID(), profileID: UUID, spaceID: UUID?, section: TabSection,
-                position: Int, url: URL, title: String = "", lastActivatedAt: Date? = nil) {
+                position: Int, url: URL, title: String = "", lastActivatedAt: Date? = nil,
+                parentTabID: UUID? = nil, groupMatcher: URLMatcher? = nil) {
         self.id = id
         self.profileID = profileID
         self.spaceID = spaceID
@@ -69,6 +81,8 @@ public struct BrowserTab: Codable, Equatable, Identifiable, Sendable, FetchableR
         self.url = url
         self.title = title
         self.lastActivatedAt = lastActivatedAt
+        self.parentTabID = parentTabID
+        self.groupMatcher = groupMatcher
     }
 
     public static let databaseTableName = "tab"
