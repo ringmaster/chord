@@ -77,11 +77,11 @@ Change `project.yml`, never the generated project.
 - The user can open multiple Major Chord windows with File > New Window. They share one set of tabs.
 - The user can open multiple Minor Chord windows. Each one has minimal chrome and shows a single website. A command-line call can open a new Minor Chord window.
 - Chord is the default handler for `http` and `https` URLs. Air Traffic Control decides whether an opened URL goes to a new Minor Chord window or to a sidebar tab in the main Chord window.
-- Air Traffic Control is the UI for match rules. A rule matches URLs, for example by domain, and triggers actions: augments, tab grouping, profile routing, and window routing. Its UX is custom and polished. Do not use stock SwiftUI forms or controls for it.
+- Air Traffic Control is the UI for match rules. A rule matches URLs, for example by domain, and triggers actions: overtones, tab grouping, profile routing, and window routing. Its UX is custom and polished. Do not use stock SwiftUI forms or controls for it.
 - A sidebar tab can group tabs by domain. New tabs that match its rule open as header tabs across the top of the content area, not in the sidebar. Clicking the sidebar tab shows that pane with its header tabs.
 - History has no pane of its own. The command palette searches it.
 - The window always has a surface to drag it by. The window buttons (close, minimize, zoom) appear only in the sidebar flyout, never over page content.
-- Domain-specific augments add behavior to specific sites. Augments use JavaScript, HTML, and CSS.
+- Domain-specific overtones add behavior to specific sites. Overtones use JavaScript, HTML, and CSS.
 - Bookmarks integrate directly with external bookmark services, Karakeep in particular.
 - Models can act on the current page, or navigate between pages and act on them. Supported models are open models through an API and the native Apple model.
 - The browser keeps a history of visited sites and shows those sites first in search results.

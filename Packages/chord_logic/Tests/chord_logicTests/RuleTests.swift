@@ -1,4 +1,5 @@
 import Foundation
+import GRDB
 import Testing
 @testable import chord_logic
 
@@ -121,9 +122,9 @@ struct RuleEngineTests {
     private func url(_ string: String) -> URL { URL(string: string)! }
 
     private func rule(_ position: Int, _ matcher: URLMatcher, route: Route? = nil,
-                      augments: [String] = [], enabled: Bool = true) -> Rule {
+                      overtones: [String] = [], enabled: Bool = true) -> Rule {
         Rule(position: position, enabled: enabled, matcher: matcher,
-             actions: RuleActions(route: route, augments: augments))
+             actions: RuleActions(route: route, overtones: overtones))
     }
 
     @Test func noRulesDecideNothing() {
@@ -140,18 +141,18 @@ struct RuleEngineTests {
     }
 
     @Test func aMatchingRuleWithoutARouteLetsALaterRuleRoute() {
-        let augmentOnly = rule(0, URLMatcher(scope: .domain, value: "github.com"), augments: ["wide"])
+        let overtoneOnly = rule(0, URLMatcher(scope: .domain, value: "github.com"), overtones: ["wide"])
         let router = rule(1, URLMatcher(scope: .domain, value: "github.com"), route: .space(personal))
-        let decision = RuleEngine.decide(url("https://github.com"), rules: [augmentOnly, router])
+        let decision = RuleEngine.decide(url("https://github.com"), rules: [overtoneOnly, router])
         #expect(decision.route == .space(personal))
         #expect(decision.routeRuleID == router.id)
     }
 
-    @Test func augmentsCollectFromEveryMatchWithoutRepeats() {
-        let a = rule(0, URLMatcher(scope: .host, value: "github.com"), augments: ["wide", "dark"])
-        let b = rule(1, URLMatcher(scope: .domain, value: "github.com"), augments: ["dark", "quiet"])
+    @Test func overtonesCollectFromEveryMatchWithoutRepeats() {
+        let a = rule(0, URLMatcher(scope: .host, value: "github.com"), overtones: ["wide", "dark"])
+        let b = rule(1, URLMatcher(scope: .domain, value: "github.com"), overtones: ["dark", "quiet"])
         let decision = RuleEngine.decide(url("https://github.com"), rules: [a, b])
-        #expect(decision.augments == ["wide", "dark", "quiet"])
+        #expect(decision.overtones == ["wide", "dark", "quiet"])
     }
 
     @Test func disabledRulesAreSkipped() {
@@ -193,7 +194,7 @@ struct RuleStorageTests {
 
     @Test func actionsRoundTripThroughJSON() throws {
         let space = UUID()
-        let actions = RuleActions(route: .space(space), augments: ["a", "b"])
+        let actions = RuleActions(route: .space(space), overtones: ["a", "b"])
         let rule = try database.addRule(matcher: URLMatcher(scope: .domain, value: "x.com", pathPrefix: "/p"),
                                         actions: actions)
         let stored = try #require(try database.rules().first)
@@ -241,5 +242,23 @@ struct RuleStorageTests {
         #expect(throws: RuleError.ruleNotFound(missing)) {
             try database.moveRule(id: missing, to: 0)
         }
+    }
+}
+
+struct OvertoneMigrationTests {
+    @Test func savedRulesKeepTheirListUnderTheNewKey() throws {
+        let queue = try DatabaseQueue()
+        try ChordDatabase.migrator.migrate(queue, upTo: "v3-tab-groups")
+        let id = UUID()
+        try queue.write { db in
+            try db.execute(sql: """
+                INSERT INTO rule (id, position, enabled, matcher, actions)
+                VALUES (?, 0, 1, '{"scope":"domain","value":"github.com"}', '{"augments":["wide","dark"]}')
+                """, arguments: [id])
+        }
+        let database = try ChordDatabase(writer: queue)
+        let rule = try #require(try database.rules().first)
+        #expect(rule.id == id)
+        #expect(rule.actions.overtones == ["wide", "dark"])
     }
 }

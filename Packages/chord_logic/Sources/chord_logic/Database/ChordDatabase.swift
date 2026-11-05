@@ -124,6 +124,16 @@ public final class ChordDatabase: Sendable {
             }
         }
 
+        migrator.registerMigration("v4-overtones") { db in
+            // Augments were renamed to overtones. Saved rules keep their list
+            // of ids under the new key.
+            try db.execute(sql: """
+                UPDATE rule SET actions = json_set(json_remove(actions, '$.augments'), '$.overtones',
+                    json(coalesce(json_extract(actions, '$.augments'), '[]')))
+                WHERE json_type(actions, '$.augments') IS NOT NULL
+                """)
+        }
+
         return migrator
     }
 

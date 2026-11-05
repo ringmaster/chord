@@ -104,15 +104,15 @@ public enum Route: Codable, Equatable, Hashable, Sendable {
 }
 
 /// What a rule does to the URLs it matches. Each part is optional; a rule
-/// without a route can still, for example, apply augments.
+/// without a route can still, for example, apply overtones.
 public struct RuleActions: Codable, Equatable, Hashable, Sendable {
     public var route: Route?
-    /// The ids of augments to inject into matching pages.
-    public var augments: [String]
+    /// The ids of overtones to inject into matching pages.
+    public var overtones: [String]
 
-    public init(route: Route? = nil, augments: [String] = []) {
+    public init(route: Route? = nil, overtones: [String] = []) {
         self.route = route
-        self.augments = augments
+        self.overtones = overtones
     }
 }
 
@@ -140,17 +140,17 @@ public struct RoutingDecision: Equatable, Sendable {
     public var route: Route?
     /// The rule that set `route`.
     public var routeRuleID: UUID?
-    /// Augments from every matching rule, in rule order, without repeats.
-    public var augments: [String]
+    /// Overtones from every matching rule, in rule order, without repeats.
+    public var overtones: [String]
     /// Every enabled rule that matched, in rule order.
     public var matchedRuleIDs: [UUID]
 
-    public static let none = RoutingDecision(route: nil, routeRuleID: nil, augments: [], matchedRuleIDs: [])
+    public static let none = RoutingDecision(route: nil, routeRuleID: nil, overtones: [], matchedRuleIDs: [])
 }
 
 public enum RuleEngine {
     /// Checks the enabled rules in position order. The first matching rule
-    /// that has a route sets the route. Augments come from every matching rule.
+    /// that has a route sets the route. Overtones come from every matching rule.
     public static func decide(_ url: URL, rules: [Rule]) -> RoutingDecision {
         var decision = RoutingDecision.none
         for rule in rules.sorted(by: { $0.position < $1.position })
@@ -160,8 +160,8 @@ public enum RuleEngine {
                 decision.route = route
                 decision.routeRuleID = rule.id
             }
-            for augment in rule.actions.augments where !decision.augments.contains(augment) {
-                decision.augments.append(augment)
+            for overtone in rule.actions.overtones where !decision.overtones.contains(overtone) {
+                decision.overtones.append(overtone)
             }
         }
         return decision
