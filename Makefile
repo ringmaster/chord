@@ -2,7 +2,7 @@ APP := Chord
 DERIVED := .build
 PRODUCT := $(DERIVED)/Build/Products/Debug/$(APP).app
 
-.PHONY: generate build run test logs clean icon
+.PHONY: generate build run test logs clean icon land
 
 # Regenerate the Xcode project from project.yml. Run after any change to it.
 generate:
@@ -17,6 +17,11 @@ run: build
 # Tests cover chord_logic. The application shell has no headless tests.
 test:
 	swift test --package-path Packages/chord_logic
+
+# Rebase this feature branch onto main, build and test it, then fast-forward
+# main and build the main checkout. See tools/land.sh.
+land:
+	tools/land.sh
 
 logs:
 	log stream --level info --predicate 'subsystem == "net.asymptomatic.Chord"'
