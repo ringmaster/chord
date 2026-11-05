@@ -364,10 +364,32 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
         Task { [weak self, weak host] in
             try? await Task.sleep(for: .seconds(2))
             guard let host, self?.toastHost === host else { return }
-            NSAnimationContext.runAnimationGroup { $0.duration = 0.25; host.animator().alphaValue = 0 } completionHandler: {
-                MainActor.assumeIsolated { host.removeFromSuperview() }
+            NSAnimationContext.runAnimationGroup({ $0.duration = 0.25; host.animator().alphaValue = 0 },
+                                                 completionHandler: nil)
+            // The toast covers the page, and a view with zero alpha still takes
+            // clicks. It is removed on a timer, not in the animation's completion
+            // handler, so a stalled animation cannot leave it over the page.
+            try? await Task.sleep(for: .seconds(0.25))
+            host.removeFromSuperview()
+            if self?.toastHost === host {
+                self?.toastHost = nil
             }
         }
+    }
+
+    /// Fades a view in with an explicit Core Animation animation. The layer's
+    /// opacity is already 1, and the animation changes only what is drawn
+    /// while it runs. If animations stall, the view still shows at once.
+    private func fadeIn(_ view: NSView, duration: CFTimeInterval) {
+        view.wantsLayer = true
+        guard let layer = view.layer else { return }
+        let fade = CABasicAnimation(keyPath: "opacity")
+        fade.fromValue = 0
+        fade.toValue = 1
+        fade.duration = duration
+        fade.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        layer.opacity = 1
+        layer.add(fade, forKey: "fadeIn")
     }
 
     @objc func closeTab(_ sender: Any?) {
@@ -415,6 +437,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
         host.frame = rootView.bounds
         host.autoresizingMask = [.width, .height]
         rootView.addSubview(host)
+        fadeIn(host, duration: 0.18)
         paletteHost = host
         paletteModel = model
         paletteKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in

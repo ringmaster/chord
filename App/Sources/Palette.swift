@@ -101,11 +101,13 @@ final class PaletteModel {
 struct PaletteView: View {
     @Bindable var model: PaletteModel
     @FocusState private var fieldFocused: Bool
-    @State private var appeared = false
 
+    // The palette draws at full opacity from its first frame. The window
+    // controller fades the hosting view in with Core Animation, so a stalled
+    // SwiftUI animation cannot leave the palette invisible.
     var body: some View {
         ZStack(alignment: .top) {
-            Color.black.opacity(appeared ? 0.12 : 0)
+            Color.black.opacity(0.12)
                 .contentShape(Rectangle())
                 .onTapGesture { model.onDismiss() }
 
@@ -122,15 +124,12 @@ struct PaletteView: View {
             .glassEffect(.regular, in: RoundedRectangle(cornerRadius: Design.Palette.cornerRadius, style: .continuous))
             .shadow(color: .black.opacity(0.25), radius: 30, y: 12)
             .padding(.top, Design.Palette.topOffset)
-            .scaleEffect(appeared ? 1 : 0.97, anchor: .top)
-            .opacity(appeared ? 1 : 0)
         }
         .onAppear {
             fieldFocused = true
             // The hosting view becomes first responder after this view
             // appears, so focus is set again on the next turn of the run loop.
             Task { @MainActor in fieldFocused = true }
-            withAnimation(.spring(duration: 0.22, bounce: 0.15)) { appeared = true }
         }
     }
 
