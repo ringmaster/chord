@@ -12,7 +12,9 @@ targets:
   Chord:
     type: application
     platform: macOS
-    sources: [App/Sources]
+    # Resources are listed as sources. XcodeGen places each file in the build
+    # phase its type calls for, so the icon goes into the bundle's Resources.
+    sources: [App/Sources, App/Resources]
     dependencies:
       - package: chord_logic
     settings:
