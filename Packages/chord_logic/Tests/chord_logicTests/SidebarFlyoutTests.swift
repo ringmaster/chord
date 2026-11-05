@@ -76,4 +76,10 @@ struct SidebarFlyoutTests {
         #expect(flyout.isPinned)
         #expect(flyout.isVisible)
     }
+
+    @Test func startingPinnedIsVisible() {
+        let flyout = SidebarFlyout(isPinned: true)
+        #expect(flyout.isPinned)
+        #expect(flyout.isVisible)
+    }
 }

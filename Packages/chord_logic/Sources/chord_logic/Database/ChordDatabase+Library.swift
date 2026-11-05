@@ -230,3 +230,13 @@ extension ChordDatabase {
         try setSetting(.searchEngine, to: engine.id)
     }
 }
+
+// MARK: Lookups for the web layer
+
+extension ChordDatabase {
+    /// The website data store id of a profile, or nil when the profile does
+    /// not exist or the read fails.
+    public func profileDataStoreID(_ profileID: UUID) -> UUID? {
+        try? writer.read { db in try Profile.fetchOne(db, key: profileID)?.dataStoreID }
+    }
+}

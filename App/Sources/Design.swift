@@ -16,6 +16,11 @@ enum Design {
         static let hideDelay: Duration = .milliseconds(350)
     }
 
+    enum Page {
+        /// The corner radius of the page when it sits beside the pinned sidebar.
+        static let cornerRadius: CGFloat = 10
+    }
+
     enum Edge {
         /// The width of the invisible zone at the left edge that shows the sidebar.
         static let hotZoneWidth: CGFloat = 5

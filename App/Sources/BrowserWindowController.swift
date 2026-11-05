@@ -1,41 +1,41 @@
 import AppKit
+import SwiftUI
 import WebKit
 import chord_logic
 
-/// One browser window that shows one web view.
+/// The main Chord window: the sidebar and the active tab's page.
 ///
-/// The page fills the whole window. There is no address bar; the command
-/// palette will do that job. The window's own controls are:
+/// There is no address bar; the command palette does that job. The window's
+/// own controls are:
 /// - a transparent drag strip over the top edge of the page,
-/// - a sidebar flyout that slides in from the left edge, and
-/// - the window buttons, which show only at the top of the flyout.
+/// - the sidebar, which is either pinned beside the page or a flyout that
+///   slides in from the left edge, and
+/// - the window buttons, which show only at the top of the sidebar.
 @MainActor
 final class BrowserWindowController: NSWindowController, NSWindowDelegate {
-    static let homeURL = SearchEngine.duckDuckGo.baseURL
-
-    let webView: WKWebView
+    let library: Library
+    let sessions: TabSessions
     /// Runs when the window closes, so the owner can release this controller.
     var onClose: (() -> Void)?
 
     private let rootView = NSView()
+    /// Holds the active tab's web view. Rounded when the sidebar is pinned.
+    private let pageContainer = NSView()
     private let dragStrip = DragStripView()
     private let edgeHotZone = EdgeHotZoneView()
-    private let sidebar = SidebarView()
+    private var sidebar: SidebarView!
 
-    private var flyout = SidebarFlyout()
+    private var flyout: SidebarFlyout
     private var hideTask: Task<Void, Never>?
-    private var titleObservation: NSKeyValueObservation?
-    private var urlObservation: NSKeyValueObservation?
+    private weak var shownWebView: WKWebView?
 
-    init(startURL: URL) {
-        let configuration = WKWebViewConfiguration()
-        configuration.websiteDataStore = .default()
-
-        webView = WKWebView(frame: .zero, configuration: configuration)
-        webView.allowsBackForwardNavigationGestures = true
-        // Web Inspector opens from Safari's Develop menu for now. A docked
-        // inspector pane is a later task.
-        webView.isInspectable = true
+    init(library: Library, sessions: TabSessions) {
+        self.library = library
+        self.sessions = sessions
+        // `open Chord.app --args -ChordSidebarPinned YES` starts with the
+        // sidebar pinned open, so screenshots can show it without key presses.
+        let pinnedOverride = UserDefaults.standard.object(forKey: "ChordSidebarPinned") as? Bool
+        flyout = SidebarFlyout(isPinned: pinnedOverride ?? library.sidebarPinned)
 
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1280, height: 820),
@@ -46,7 +46,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
         window.titleVisibility = .hidden
         window.titlebarSeparatorStyle = .none
         window.isReleasedWhenClosed = false
-        window.minSize = NSSize(width: 480, height: 320)
+        window.minSize = NSSize(width: 520, height: 320)
         window.contentView = rootView
         window.setFrameAutosaveName("BrowserWindow")
         if window.frame.origin == .zero {
@@ -56,15 +56,14 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
         super.init(window: window)
         window.delegate = self
 
+        sidebar = SidebarView(content: SidebarContent(
+            library: library,
+            onOpenPalette: { [weak self] in self?.openPalette(nil) },
+            onNewTab: { [weak self] in self?.newTab(nil) }))
         buildViews()
-        observePage()
-        // `open Chord.app --args -ChordSidebarPinned YES` starts with the
-        // sidebar pinned open, so screenshots can show it without key presses.
-        if UserDefaults.standard.bool(forKey: "ChordSidebarPinned") {
-            _ = flyout.handle(.togglePinned)
-        }
         applyFlyoutState(animated: false)
-        webView.load(URLRequest(url: startURL))
+
+        keepUpdated { [weak self] in self?.showActiveTab() }
     }
 
     @available(*, unavailable)
@@ -75,17 +74,14 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
     // MARK: Views
 
     private func buildViews() {
-        rootView.addSubview(webView)
+        rootView.wantsLayer = true
+        pageContainer.wantsLayer = true
+        pageContainer.layer?.masksToBounds = true
+
+        rootView.addSubview(pageContainer)
         rootView.addSubview(dragStrip)
         rootView.addSubview(edgeHotZone)
         rootView.addSubview(sidebar)
-
-        webView.autoresizingMask = [.width, .height]
-        webView.frame = rootView.bounds
-
-        dragStrip.autoresizingMask = [.width, .minYMargin]
-        edgeHotZone.autoresizingMask = [.height]
-        sidebar.autoresizingMask = [.height]
 
         edgeHotZone.onPointerEntered = { [weak self] in self?.send(.pointerReachedEdge) }
         sidebar.onPointerExited = { [weak self] in self?.send(.pointerLeftSidebar) }
@@ -93,13 +89,28 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
         layoutChrome()
     }
 
-    /// Places the strip, the hot zone, and the sidebar. The sidebar sits off
-    /// the left edge when hidden and slides in when shown.
+    /// Places every part of the window for the current size and sidebar state.
+    /// When the sidebar is pinned, the page sits beside it in a rounded card.
+    /// Otherwise the page fills the window and the sidebar floats over it.
     private func layoutChrome() {
         let bounds = rootView.bounds
+        let inset = Design.Sidebar.inset
+        let pagePinned = flyout.isPinned
+
+        let pageFrame = pagePinned
+            ? NSRect(x: inset + Design.Sidebar.width + inset, y: inset,
+                     width: bounds.width - Design.Sidebar.width - inset * 3,
+                     height: bounds.height - inset * 2)
+            : bounds
+        pageContainer.frame = pageFrame
+        pageContainer.layer?.cornerRadius = pagePinned ? Design.Page.cornerRadius : 0
+        shownWebView?.frame = pageContainer.bounds
+
         let strip = Design.Edge.dragStripHeight
-        dragStrip.frame = NSRect(x: 0, y: bounds.height - strip, width: bounds.width, height: strip)
+        dragStrip.frame = NSRect(x: pageFrame.minX, y: bounds.height - strip,
+                                 width: pageFrame.width, height: strip)
         edgeHotZone.frame = NSRect(x: 0, y: 0, width: Design.Edge.hotZoneWidth, height: bounds.height)
+        edgeHotZone.isHidden = pagePinned
         sidebar.frame = sidebarFrame(visible: flyout.isVisible)
     }
 
@@ -111,19 +122,70 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
         return NSRect(x: x, y: inset, width: width, height: bounds.height - inset * 2)
     }
 
+    // MARK: Active tab
+
+    /// Shows the active tab's web view, creating it the first time.
+    private func showActiveTab() {
+        let tab = library.activeTab
+        sessions.prune(keeping: library.visibleTabs)
+        guard let tab else {
+            shownWebView?.removeFromSuperview()
+            shownWebView = nil
+            return
+        }
+        let webView = sessions.session(for: tab).webView
+        guard webView !== shownWebView else { return }
+        shownWebView?.removeFromSuperview()
+        webView.frame = pageContainer.bounds
+        webView.autoresizingMask = [.width, .height]
+        pageContainer.addSubview(webView)
+        shownWebView = webView
+        window?.makeFirstResponder(webView)
+    }
+
+    // MARK: Actions
+
+    @objc func newTab(_ sender: Any?) {
+        library.openTab(library.searchEngine.baseURL)
+    }
+
+    @objc func closeTab(_ sender: Any?) {
+        guard let id = library.activeTabID else { return }
+        library.close(id)
+    }
+
+    @objc func openPalette(_ sender: Any?) {
+        // The command palette replaces this in the next task.
+        newTab(sender)
+    }
+
+    @objc func reloadPage(_ sender: Any?) {
+        shownWebView?.reload()
+    }
+
+    @objc func goBack(_ sender: Any?) {
+        shownWebView?.goBack()
+    }
+
+    @objc func goForward(_ sender: Any?) {
+        shownWebView?.goForward()
+    }
+
     // MARK: Sidebar flyout
 
     @objc func toggleSidebar(_ sender: Any?) {
         send(.togglePinned)
+        library.sidebarPinned = flyout.isPinned
     }
 
     private func send(_ event: SidebarFlyout.Event) {
         let wasVisible = flyout.isVisible
+        let wasPinned = flyout.isPinned
         let effect = flyout.handle(event)
         if effect == .scheduleHide {
             scheduleHide()
         }
-        if flyout.isVisible != wasVisible {
+        if flyout.isVisible != wasVisible || flyout.isPinned != wasPinned {
             applyFlyoutState(animated: true)
         }
     }
@@ -145,7 +207,6 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
 
     private func applyFlyoutState(animated: Bool) {
         let visible = flyout.isVisible
-        let target = sidebarFrame(visible: visible)
         // A view with zero alpha still takes clicks, so hidden controls are
         // also marked hidden. They are unhidden before they fade in, and hidden
         // after they fade out.
@@ -157,7 +218,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
             context.duration = animated ? Design.Sidebar.slideDuration : 0
             context.timingFunction = Design.Motion.easeOut
             context.allowsImplicitAnimation = true
-            sidebar.animator().frame = target
+            layoutChrome()
             for button in windowButtons {
                 button.animator().alphaValue = visible ? 1 : 0
             }
@@ -178,7 +239,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
             .compactMap { window?.standardWindowButton($0) }
     }
 
-    /// Moves the window buttons so they sit inside the top of the flyout card.
+    /// Moves the window buttons so they sit inside the top of the sidebar card.
     /// `applyFlyoutState` shows and hides them.
     private func placeWindowButtons() {
         let buttons = windowButtons
@@ -188,30 +249,11 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
         // Centered in the card's header area, measured from the window top.
         let headerCenterFromTop = Design.Sidebar.inset + Design.Sidebar.headerHeight / 2
         for (index, button) in buttons.enumerated() {
-            var origin = NSPoint(x: leading + CGFloat(index) * spacing, y: 0)
-            let centerY = titlebar.bounds.height - headerCenterFromTop
-            origin.y = titlebar.isFlipped
+            let y = titlebar.isFlipped
                 ? headerCenterFromTop - button.frame.height / 2
-                : centerY - button.frame.height / 2
-            button.setFrameOrigin(origin)
+                : titlebar.bounds.height - headerCenterFromTop - button.frame.height / 2
+            button.setFrameOrigin(NSPoint(x: leading + CGFloat(index) * spacing, y: y))
         }
-    }
-
-    // MARK: Page
-
-    private func observePage() {
-        titleObservation = webView.observe(\.title) { [weak self] _, _ in
-            MainActor.assumeIsolated { self?.updateSidebarPage() }
-        }
-        urlObservation = webView.observe(\.url) { [weak self] _, _ in
-            MainActor.assumeIsolated { self?.updateSidebarPage() }
-        }
-    }
-
-    private func updateSidebarPage() {
-        let host = webView.url?.host() ?? ""
-        let title = webView.title.flatMap { $0.isEmpty ? nil : $0 } ?? host
-        sidebar.show(title: title, host: host)
     }
 
     // MARK: NSWindowDelegate

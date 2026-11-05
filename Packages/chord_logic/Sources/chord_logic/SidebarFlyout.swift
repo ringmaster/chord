@@ -25,7 +25,10 @@ public struct SidebarFlyout: Equatable, Sendable {
     public private(set) var isVisible = false
     public private(set) var isPinned = false
 
-    public init() {}
+    public init(isPinned: Bool = false) {
+        self.isPinned = isPinned
+        self.isVisible = isPinned
+    }
 
     public mutating func handle(_ event: Event) -> Effect {
         switch event {

@@ -7,6 +7,8 @@ public enum SettingKey: String, Sendable {
     case searchEngine
     /// The id of the space the main window shows.
     case activeSpaceID
+    /// "1" when the sidebar is pinned open beside the page, "0" when it is a flyout.
+    case sidebarPinned
 }
 
 /// Chord's database: profiles, spaces, tabs, settings, and history.
