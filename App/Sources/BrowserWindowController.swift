@@ -276,6 +276,89 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
         }
     }
 
+    // MARK: Logins
+
+    /// Command-Backslash: fills a 1Password login for the page. One matching
+    /// login fills at once; with several, the palette lists them.
+    @objc func fillLogin(_ sender: Any?) {
+        guard let webView = shownWebView, let url = webView.url else { return }
+        guard LoginMatching.canFill(url), let host = url.host() else {
+            showToast("Chord fills logins only on secure pages", symbol: "lock.slash")
+            return
+        }
+        guard let service = appDelegate?.passwords?.service else {
+            showOnePasswordSetup()
+            return
+        }
+        Task { [weak self, weak webView] in
+            do {
+                let logins = try await service.logins(matching: url)
+                guard let self, let webView, webView.url?.host() == host else { return }
+                switch logins.count {
+                case 0:
+                    showToast("No 1Password logins for \(host)", symbol: "key")
+                case 1:
+                    fill(logins[0], expectedHost: host, in: webView)
+                default:
+                    showPalette(mode: .chooseLogin(host: host, logins: logins), initialText: "")
+                }
+            } catch {
+                self?.handlePasswordError(error)
+            }
+        }
+    }
+
+    private func fill(_ login: LoginItem, expectedHost: String, in webView: WKWebView) {
+        guard let service = appDelegate?.passwords?.service else { return }
+        Task { [weak self, weak webView] in
+            do {
+                let credential = try await service.credential(for: login)
+                guard let self, let webView else { return }
+                switch try await LoginFiller.fill(credential, expectedHost: expectedHost, in: webView) {
+                case .filled:
+                    showToast("Filled \(login.title)", symbol: "key.fill")
+                case .noFields:
+                    showToast("No login fields on this page", symbol: "key")
+                case .pageMoved:
+                    showToast("The page changed before Chord could fill it", symbol: "exclamationmark.triangle.fill")
+                }
+            } catch {
+                self?.handlePasswordError(error)
+            }
+        }
+    }
+
+    private func handlePasswordError(_ error: Error) {
+        switch error as? PasswordServiceError {
+        case .notInstalled, .notSignedIn:
+            showOnePasswordSetup()
+        case .cancelled:
+            return
+        case .failed(let message):
+            Passwords.log.error("1Password failed: \(message, privacy: .public)")
+            showToast(message, symbol: "exclamationmark.triangle.fill")
+        case .unreadableResponse, nil:
+            Passwords.log.error("1Password failed: \(String(describing: error), privacy: .public)")
+            showToast("1Password gave an answer Chord could not read", symbol: "exclamationmark.triangle.fill")
+        }
+    }
+
+    private func showOnePasswordSetup() {
+        guard let passwords = appDelegate?.passwords, let window, window.attachedSheet == nil else { return }
+        let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 460, height: 10),
+                            styleMask: [.titled, .fullSizeContentView], backing: .buffered, defer: false)
+        panel.titlebarAppearsTransparent = true
+        panel.titleVisibility = .hidden
+        let view = OnePasswordSetupView(passwords: passwords) { [weak self, weak window, weak panel] connected in
+            if let panel { window?.endSheet(panel) }
+            if connected { self?.showToast("1Password is connected", symbol: "key.fill") }
+        }
+        let host = NSHostingView(rootView: view)
+        panel.contentView = host
+        panel.setContentSize(host.fittingSize)
+        window.beginSheet(panel)
+    }
+
     private func showKarakeepConnect() {
         guard let bookmarking = appDelegate?.bookmarking, let window else { return }
         let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 460, height: 10),
@@ -507,6 +590,10 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
             state.activate(tab.id)
         case .command(let command):
             run(command.id)
+        case .login(let login):
+            if case .chooseLogin(let host, _) = mode, let webView = shownWebView {
+                fill(login, expectedHost: host, in: webView)
+            }
         }
     }
 
@@ -564,6 +651,10 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
         if state.activeTab != nil {
             commands.append(PaletteCommand(id: "route-site", title: "Route This Site…",
                                            symbol: "arrow.triangle.branch", keywords: ["rule"]))
+        }
+        if state.activeTab != nil {
+            commands.append(PaletteCommand(id: "fill-login", title: "Fill Login from 1Password", symbol: "key.fill",
+                                           keywords: ["password", "1password", "sign in", "autofill"], shortcut: "⌘\\"))
         }
         if appDelegate?.bookmarking?.isConnected == true {
             if state.activeTab != nil {
@@ -627,6 +718,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
         case "ask-chord": askChord(nil)
         case "agent-model": showAgentModelSheet()
         case "karakeep-save": saveBookmark(nil)
+        case "fill-login": fillLogin(nil)
         case "karakeep-connect": showKarakeepConnect()
         case "overtones-folder": appDelegate?.overtones?.revealFolder()
         case "overtones-reload": appDelegate?.overtones?.reload()

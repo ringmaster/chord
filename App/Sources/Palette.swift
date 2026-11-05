@@ -2,12 +2,15 @@ import SwiftUI
 import chord_logic
 
 /// What pressing Return on an address or a search does.
-enum PaletteMode {
+enum PaletteMode: Equatable {
     /// Opens a new tab. Command-T opens the palette this way.
     case newTab
     /// Loads the page in the active tab. Command-L opens the palette this way,
     /// with the active tab's address filled in.
     case currentTab
+    /// Lists these logins for the page on `host`, and fills the chosen one.
+    /// Fill Login opens the palette this way when more than one login matches.
+    case chooseLogin(host: String, logins: [LoginItem])
 }
 
 /// The state of an open command palette: the typed text, the rows, and the
@@ -74,6 +77,10 @@ final class PaletteModel {
     }
 
     private func rebuild() {
+        if case .chooseLogin(_, let logins) = mode {
+            items = PaletteResults.logins(query: query, logins: logins)
+            return
+        }
         let history = (try? library.database.searchHistory(query, limit: PaletteResults.maximumHistory * 2)) ?? []
         items = PaletteResults.build(query: query, tabs: tabs, commands: commands, history: history,
                                      bookmarks: bookmarks, engine: library.searchEngine)
@@ -83,6 +90,7 @@ final class PaletteModel {
     /// leaves the other rows as they are.
     private func searchBookmarks() {
         bookmarkTask?.cancel()
+        if case .chooseLogin = mode { return }
         guard let bookmarkService, !query.trimmingCharacters(in: .whitespaces).isEmpty else { return }
         let text = query
         bookmarkTask = Task { [weak self] in
@@ -135,11 +143,10 @@ struct PaletteView: View {
 
     private var field: some View {
         HStack(spacing: 12) {
-            Image(systemName: model.mode == .newTab ? "plus.magnifyingglass" : "magnifyingglass")
+            Image(systemName: fieldSymbol)
                 .font(.system(size: 17, weight: .medium))
                 .foregroundStyle(.secondary)
-            TextField("", text: $model.query, selection: $model.selection,
-                      prompt: Text(model.mode == .newTab ? "Search or enter address" : "Go to address, search, or run a command"))
+            TextField("", text: $model.query, selection: $model.selection, prompt: Text(fieldPrompt))
                 .textFieldStyle(.plain)
                 .font(.system(size: 19, weight: .regular))
                 .focused($fieldFocused)
@@ -148,6 +155,22 @@ struct PaletteView: View {
         }
         .padding(.horizontal, 18)
         .frame(height: 56)
+    }
+
+    private var fieldSymbol: String {
+        switch model.mode {
+        case .newTab: "plus.magnifyingglass"
+        case .currentTab: "magnifyingglass"
+        case .chooseLogin: "key.fill"
+        }
+    }
+
+    private var fieldPrompt: String {
+        switch model.mode {
+        case .newTab: "Search or enter address"
+        case .currentTab: "Go to address, search, or run a command"
+        case .chooseLogin(let host, _): "Choose a 1Password login for \(host)"
+        }
     }
 
     private var results: some View {
@@ -228,6 +251,8 @@ private struct PaletteRow: View {
                 }
         case .command(let command):
             symbol(command.symbol)
+        case .login:
+            symbol("key.fill")
         }
     }
 
@@ -247,6 +272,7 @@ private struct PaletteRow: View {
         case .history(let entry): entry.title.isEmpty ? (entry.url.host() ?? entry.url.absoluteString) : entry.title
         case .bookmark(let bookmark): bookmark.title
         case .command(let command): command.title
+        case .login(let login): login.title
         }
     }
 
@@ -258,6 +284,7 @@ private struct PaletteRow: View {
         case .history(let entry): entry.url.absoluteString
         case .bookmark(let bookmark): "Karakeep · \(bookmark.url.absoluteString)"
         case .command(let command): command.shortcut
+        case .login(let login): [login.username, login.vault].compactMap { $0 }.joined(separator: " · ")
         }
     }
 
@@ -269,6 +296,7 @@ private struct PaletteRow: View {
         case .history: "Open ↩"
         case .bookmark: "Open ↩"
         case .command: "Run ↩"
+        case .login: "Fill ↩"
         }
     }
 }

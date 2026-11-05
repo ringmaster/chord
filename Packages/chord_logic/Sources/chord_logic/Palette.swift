@@ -34,6 +34,9 @@ public enum PaletteItem: Equatable, Sendable {
     /// Load a page from the bookmark service.
     case bookmark(ServiceBookmark)
     case command(PaletteCommand)
+    /// Fill a saved login into the page. These rows appear only when the
+    /// palette is choosing a login.
+    case login(LoginItem)
 }
 
 /// Scores how well text matches what the user typed.
@@ -79,6 +82,21 @@ public enum FuzzyMatch {
 
 /// Builds the palette's rows for what the user typed.
 public enum PaletteResults {
+    /// The rows when the palette is choosing a login: every login with nothing
+    /// typed, in the order given, or the logins whose title, username, or vault
+    /// match, best first.
+    public static func logins(query: String, logins: [LoginItem]) -> [PaletteItem] {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return logins.map(PaletteItem.login) }
+        return logins
+            .compactMap { login -> (LoginItem, Double)? in
+                let texts = [login.title, login.username ?? "", login.vault ?? ""]
+                return FuzzyMatch.bestScore(trimmed, in: texts).map { (login, $0) }
+            }
+            .sorted { $0.1 > $1.1 }
+            .map { PaletteItem.login($0.0) }
+    }
+
     public static let maximumTabs = 4
     public static let maximumCommands = 4
     public static let maximumHistory = 6
