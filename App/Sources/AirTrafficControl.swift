@@ -205,7 +205,7 @@ private struct TestField: View {
                         Image(systemName: "xmark.circle.fill")
                             .foregroundStyle(.tertiary)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(ChromeButtonStyle(shape: .circle))
                 }
             }
             .padding(.horizontal, 14)
@@ -260,7 +260,7 @@ private struct TestResult: View {
                         .background(Capsule().fill(Color.accentColor.opacity(0.18)))
                         .foregroundStyle(.tint)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(ChromeButtonStyle(shape: .capsule))
             } else if let index = decision.routeRuleID.flatMap({ id in model.library.rules.firstIndex { $0.id == id } }) {
                 Text("Rule \(index + 1) decides")
                     .font(.system(size: 12, weight: .medium))
@@ -354,7 +354,7 @@ private struct RuleCard: View {
                     .frame(width: 26, height: 26)
                     .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(ChromeButtonStyle(shape: .roundedRectangle(cornerRadius: 7)))
             .opacity(hovering ? 1 : 0)
             .help("Delete rule")
         }
@@ -652,7 +652,7 @@ private struct ChoicePill<Label: View, Content: View>: View {
             .background(Capsule().fill(.primary.opacity(prominent ? (hovering ? 0.12 : 0.09) : (hovering ? 0.09 : 0.05))))
             .contentShape(Capsule())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(ChromeButtonStyle(shape: .capsule))
         .fixedSize()
         .onHover { hovering = $0 }
         .popover(isPresented: $open, arrowEdge: .bottom) { content }
@@ -726,7 +726,7 @@ private struct ChoiceRow: View {
                 .fill(.primary.opacity(hovering ? 0.08 : 0)))
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(ChromeButtonStyle(shape: .roundedRectangle(cornerRadius: 8)))
         .onHover { hovering = $0 }
     }
 }
@@ -751,7 +751,7 @@ struct EnabledSwitch: View {
                     .padding(2)
             }
         }
-        .buttonStyle(.plain)
+        .buttonStyle(ChromeButtonStyle(shape: .capsule))
         .help(isOn ? "Turn this rule off" : "Turn this rule on")
     }
 }
@@ -804,7 +804,7 @@ private struct AddRuleButton: View {
                     .strokeBorder(.primary.opacity(hovering ? 0.2 : 0.1), style: StrokeStyle(lineWidth: 1, dash: [5, 4])))
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(ChromeButtonStyle(shape: .roundedRectangle(cornerRadius: 14)))
         .onHover { hovering = $0 }
     }
 }
@@ -828,21 +828,6 @@ private struct EmptyRules: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 48)
-    }
-}
-
-/// A rounded button with a soft fill, used instead of the stock bordered style.
-struct QuietButtonStyle: ButtonStyle {
-    var prominent = false
-
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.system(size: 12, weight: .semibold))
-            .padding(.horizontal, 12)
-            .frame(height: 26)
-            .background(Capsule().fill(prominent ? Color.accentColor.opacity(configuration.isPressed ? 0.3 : 0.2)
-                                                 : .primary.opacity(configuration.isPressed ? 0.12 : 0.07)))
-            .foregroundStyle(prominent ? AnyShapeStyle(.tint) : AnyShapeStyle(.primary))
     }
 }
 
@@ -922,7 +907,7 @@ private struct GroupCard: View {
                     .frame(width: 26, height: 26)
                     .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(ChromeButtonStyle(shape: .roundedRectangle(cornerRadius: 7)))
             .opacity(hovering ? 1 : 0)
             .help("Ungroup: the tabs go back to the sidebar")
         }

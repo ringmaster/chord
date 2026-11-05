@@ -62,7 +62,7 @@ private struct HeaderTab: View {
                         .frame(width: 16, height: 16)
                         .background(Circle().fill(.primary.opacity(0.08)))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(ChromeButtonStyle(shape: .circle))
                 .help("Close tab")
             }
         }
@@ -106,7 +106,7 @@ private struct NewHeaderTabButton: View {
                     .fill(.primary.opacity(hovering ? 0.08 : 0)))
                 .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(ChromeButtonStyle(shape: .roundedRectangle(cornerRadius: 7)))
         .onHover { hovering = $0 }
         .help("New tab in this group")
     }

@@ -114,8 +114,11 @@ struct AgentCard: View {
                 Text(session.phase == .composing ? modelLabel : session.modelName)
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(.secondary)
+                    .padding(.horizontal, 8)
+                    .frame(height: 20)
+                    .contentShape(Capsule())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(ChromeButtonStyle(shape: .capsule))
             .help("Choose the model for page actions")
             Button {
                 session.stop()
@@ -124,7 +127,7 @@ struct AgentCard: View {
                 Image(systemName: "xmark").font(.system(size: 10, weight: .bold)).foregroundStyle(.secondary)
                     .frame(width: 20, height: 20).background(Circle().fill(.primary.opacity(0.08)))
             }
-            .buttonStyle(.plain)
+            .buttonStyle(ChromeButtonStyle(shape: .circle))
             .keyboardShortcut(.cancelAction)
         }
     }
@@ -306,7 +309,7 @@ private struct ProviderCard: View {
                 .fill(selected ? Color.accentColor.opacity(0.12) : .primary.opacity(0.05)))
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(ChromeButtonStyle(shape: .roundedRectangle(cornerRadius: 12)))
     }
 }
 

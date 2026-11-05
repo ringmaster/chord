@@ -91,7 +91,7 @@ private struct AddressPill: View {
                     .fill(.primary.opacity(hovering ? 0.10 : 0.06)))
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(ChromeButtonStyle(shape: .roundedRectangle(cornerRadius: 9)))
         .onHover { hovering = $0 }
         .animation(.easeOut(duration: 0.12), value: hovering)
         .help("Search or enter an address (⌘L)")
@@ -137,7 +137,7 @@ private struct FavoriteTile: View {
                         .fill(.primary.opacity(active ? 0.16 : hovering ? 0.10 : 0.06)))
                 .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(ChromeButtonStyle(shape: .roundedRectangle(cornerRadius: 10)))
         .onHover { hovering = $0 }
         .animation(.easeOut(duration: 0.12), value: hovering)
         .help(tab.title.isEmpty ? (tab.url.host() ?? "") : tab.title)
@@ -196,7 +196,7 @@ private struct TabRow: View {
                         .frame(width: 18, height: 18)
                         .background(Circle().fill(.primary.opacity(0.08)))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(ChromeButtonStyle(shape: .circle))
                 .transition(.opacity)
                 .help(tab.section == .pinned ? "Close pinned tab" : "Close tab")
             }
@@ -350,7 +350,7 @@ private struct SpaceSwitcher: View {
                     .frame(width: 22, height: 22)
                     .contentShape(Circle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(ChromeButtonStyle(shape: .circle))
             .help("New space")
         }
     }
@@ -371,7 +371,7 @@ private struct SpaceDot: View {
                 .background(Circle().fill(.primary.opacity(active ? 0.16 : hovering ? 0.08 : 0)))
                 .contentShape(Circle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(ChromeButtonStyle(shape: .circle))
         .onHover { hovering = $0 }
         .help(space.name)
     }
@@ -433,7 +433,7 @@ private struct ExtensionButton: View {
             }
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(ChromeButtonStyle(shape: .roundedRectangle(cornerRadius: 7)))
         .onHover { hovering = $0 }
         .help(contextAction?.label ?? webExtension.displayActionLabel ?? webExtension.displayName ?? "Extension")
     }

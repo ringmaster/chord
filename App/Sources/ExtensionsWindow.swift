@@ -178,7 +178,7 @@ private struct ExtensionCard: View {
                         .frame(width: 24, height: 24)
                         .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(ChromeButtonStyle(shape: .roundedRectangle(cornerRadius: 7)))
                 .opacity(hovering ? 1 : 0)
                 .help("Remove extension")
             }
