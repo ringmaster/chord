@@ -11,36 +11,24 @@ import WebKit
 /// every web view is inspectable.
 @MainActor
 enum WebInspector {
-    /// The web views whose inspector Chord has docked.
-    private static var docked: Set<ObjectIdentifier> = []
-
-    static func isDocked(_ webView: WKWebView) -> Bool {
-        docked.contains(ObjectIdentifier(webView))
-    }
-
     /// Shows and docks the inspector for `webView`, or closes it when it is
-    /// docked. Returns false when the private API is not available.
+    /// showing. Returns false when the private API is not available.
     @discardableResult
     static func toggle(_ webView: WKWebView) -> Bool {
         guard let inspector = inspector(of: webView) else { return false }
-        let id = ObjectIdentifier(webView)
-        if docked.contains(id) {
-            guard call(inspector, "close") else { return false }
-            docked.remove(id)
-        } else {
-            // WebKit opens its own inspector only when the private developer
-            // extras preference is on; `isInspectable` covers Safari only.
-            let preferences = webView.configuration.preferences
-            if preferences.responds(to: NSSelectorFromString("_setDeveloperExtrasEnabled:")) {
-                preferences.setValue(true, forKey: "developerExtrasEnabled")
-            }
-            // The inspector docks beside the web view, inside the web view's
-            // superview, which is the page area. WebKit sizes both views.
-            guard call(inspector, "show"), call(inspector, "attach") else { return false }
-            FileHandle.standardError.write(Data("INSPECTDEBUG shown visible=\(inspector.value(forKey: "visible") ?? "?") superview=\(String(describing: webView.superview?.subviews.map { type(of: $0) }))\n".utf8))
-            docked.insert(id)
+        // WebKit's own state, so closing from the inspector's toolbar counts too.
+        if (inspector.value(forKey: "visible") as? Bool) == true {
+            return call(inspector, "close")
         }
-        return true
+        // WebKit opens its own inspector only when the private developer
+        // extras preference is on; `isInspectable` covers Safari only.
+        let preferences = webView.configuration.preferences
+        if preferences.responds(to: NSSelectorFromString("_setDeveloperExtrasEnabled:")) {
+            preferences.setValue(true, forKey: "developerExtrasEnabled")
+        }
+        // The inspector docks beside the web view, inside the web view's
+        // superview, which is the page area. WebKit sizes both views.
+        return call(inspector, "show") && call(inspector, "attach")
     }
 
     private static func inspector(of webView: WKWebView) -> NSObject? {
