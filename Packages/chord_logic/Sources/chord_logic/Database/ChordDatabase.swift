@@ -105,6 +105,18 @@ public final class ChordDatabase: Sendable {
             }
         }
 
+        migrator.registerMigration("v2-rules") { db in
+            // The matcher and actions are stored as JSON, so new action kinds
+            // do not need a schema change.
+            try db.create(table: "rule") { t in
+                t.primaryKey("id", .blob)
+                t.column("position", .integer).notNull()
+                t.column("enabled", .boolean).notNull()
+                t.column("matcher", .text).notNull()
+                t.column("actions", .text).notNull()
+            }
+        }
+
         return migrator
     }
 
