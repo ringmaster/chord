@@ -91,6 +91,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 first?.runAgentForTesting(task)
             }
         }
+        // `--args -ChordShowAgentModel YES` opens the page actions model sheet, for screenshots.
+        if UserDefaults.standard.bool(forKey: "ChordShowAgentModel") {
+            // A sheet needs its window on screen, so this waits a moment.
+            Task {
+                try? await Task.sleep(for: .seconds(1))
+                first?.run("agent-model")
+            }
+        }
         // `--args -ChordShowExtensions YES` opens the Extensions window, for screenshots.
         if UserDefaults.standard.bool(forKey: "ChordShowExtensions") {
             showExtensions(nil)

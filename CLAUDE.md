@@ -45,6 +45,7 @@ A commit-msg hook refuses any message that contains "claude" or "anthropic", inc
 - `--args -ChordShowExtensions YES` opens the Extensions window at launch, for screenshots.
 - `--args -ChordKarakeepServer http://127.0.0.1:8799 -ChordKarakeepKey KEY` uses a Karakeep server for one launch without saving anything, for testing against a stub.
 - `--args -ChordShowDeveloperTools YES` docks Web Inspector two seconds after launch, for screenshots.
+- `--args -ChordShowAgentModel YES` opens the page actions model sheet one second after launch, for screenshots.
 - `--args -ChordAgentTask "text"` opens the page actions card and runs that task three seconds after launch, for testing against a stub model.
 - `make clean`: delete build output and the generated Xcode project.
 

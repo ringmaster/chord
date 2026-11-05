@@ -607,7 +607,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
         return commands
     }
 
-    private func run(_ commandID: String) {
+    func run(_ commandID: String) {
         if commandID.hasPrefix("space:"), let id = UUID(uuidString: String(commandID.dropFirst(6))) {
             state.selectSpace(id)
             return
