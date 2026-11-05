@@ -38,5 +38,9 @@ targets:
           CODE_SIGN_STYLE: Manual
           ENABLE_HARDENED_RUNTIME: YES
           OTHER_CODE_SIGN_FLAGS: "--timestamp"
+          # Xcode adds com.apple.security.get-task-allow to anything it builds,
+          # which lets a debugger attach. Apple refuses to notarize a build that
+          # has it, and Chord has no other entitlements, so nothing is injected.
+          CODE_SIGN_INJECT_BASE_ENTITLEMENTS: NO
           ONLY_ACTIVE_ARCH: NO
           ARCHS: "$(ARCHS_STANDARD)"
