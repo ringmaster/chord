@@ -22,12 +22,12 @@ logs:
 	log stream --level info --predicate 'subsystem == "net.asymptomatic.Chord"'
 
 # Draw the application icon. The result is committed, so this only needs
-# running when the drawing in tools/make-icon changes.
+# running when tools/make-icon or its artwork.png changes.
 icon:
 	mkdir -p $(DERIVED)
 	swiftc -O -o $(DERIVED)/make-icon tools/make-icon/main.swift
 	rm -rf $(DERIVED)/AppIcon.iconset
-	$(DERIVED)/make-icon $(DERIVED)/AppIcon.iconset
+	$(DERIVED)/make-icon tools/make-icon/artwork.png $(DERIVED)/AppIcon.iconset
 	iconutil -c icns -o App/Resources/AppIcon.icns $(DERIVED)/AppIcon.iconset
 
 clean:
