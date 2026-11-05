@@ -51,7 +51,8 @@ final class AirTrafficControlWindowController: NSWindowController, NSWindowDeleg
 
     /// Shows the window. With a page URL, the test field holds it, and a new
     /// rule for that site is added when no rule routes it yet.
-    func show(routing pageURL: URL?) {
+    func show(routing pageURL: URL?, spaceID: UUID) {
+        model.newRuleSpaceID = spaceID
         if let pageURL {
             model.testText = pageURL.absoluteString
             model.addRuleForTestedSiteIfUnrouted()
@@ -69,6 +70,9 @@ final class AirTrafficControlModel {
     var testText = ""
     /// The rule that was just added, so its card can scroll into view and glow.
     var highlightedRuleID: UUID?
+    /// The space a new rule routes to: the space of the window that opened
+    /// Air Traffic Control.
+    var newRuleSpaceID: UUID?
 
     init(library: Library) {
         self.library = library
@@ -85,7 +89,7 @@ final class AirTrafficControlModel {
     }
 
     func addRule(_ matcher: URLMatcher) {
-        let route = Route.space(library.activeSpace.id)
+        let route = Route.space(newRuleSpaceID ?? library.lastSpaceID)
         if let rule = library.addRule(matcher: matcher, actions: RuleActions(route: route)) {
             highlightedRuleID = rule.id
         }

@@ -24,15 +24,17 @@ final class PaletteModel {
     var selectedIndex = 0
 
     @ObservationIgnored private let library: Library
+    @ObservationIgnored private let tabs: [BrowserTab]
     @ObservationIgnored private let commands: [PaletteCommand]
     @ObservationIgnored let onPerform: (PaletteItem, PaletteMode) -> Void
     @ObservationIgnored let onDismiss: () -> Void
 
-    init(mode: PaletteMode, initialText: String, library: Library, commands: [PaletteCommand],
+    init(mode: PaletteMode, initialText: String, library: Library, tabs: [BrowserTab], commands: [PaletteCommand],
          onPerform: @escaping (PaletteItem, PaletteMode) -> Void, onDismiss: @escaping () -> Void) {
         self.mode = mode
         self.query = initialText
         self.library = library
+        self.tabs = tabs
         self.commands = commands
         self.onPerform = onPerform
         self.onDismiss = onDismiss
@@ -59,7 +61,7 @@ final class PaletteModel {
 
     private func refresh() {
         let history = (try? library.database.searchHistory(query, limit: PaletteResults.maximumHistory * 2)) ?? []
-        items = PaletteResults.build(query: query, tabs: library.visibleTabs, commands: commands,
+        items = PaletteResults.build(query: query, tabs: tabs, commands: commands,
                                      history: history, engine: library.searchEngine)
         selectedIndex = 0
     }

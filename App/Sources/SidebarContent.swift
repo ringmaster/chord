@@ -10,7 +10,7 @@ import chord_logic
 ///
 /// Empty areas of the card drag the window.
 struct SidebarContent: View {
-    let library: Library
+    let state: WindowState
     var onOpenPalette: () -> Void
     var onNewTab: () -> Void
 
@@ -24,23 +24,23 @@ struct SidebarContent: View {
             VStack(alignment: .leading, spacing: 0) {
                 Color.clear.frame(height: Design.Sidebar.headerHeight)
 
-                AddressPill(tab: library.activeTab, action: onOpenPalette)
+                AddressPill(tab: state.activeTab, action: onOpenPalette)
                     .padding(.horizontal, Design.Sidebar.contentPadding - 4)
                     .padding(.bottom, 12)
 
                 ScrollView(.vertical) {
                     VStack(alignment: .leading, spacing: 2) {
-                        if !library.contents.favorites.isEmpty {
-                            FavoritesGrid(library: library)
+                        if !state.contents.favorites.isEmpty {
+                            FavoritesGrid(state: state)
                                 .padding(.bottom, 10)
                         }
-                        ForEach(library.contents.pinned) { tab in
-                            TabRow(tab: tab, library: library)
+                        ForEach(state.contents.pinned) { tab in
+                            TabRow(tab: tab, state: state)
                         }
                         SectionDivider()
                         NewTabRow(action: onNewTab)
-                        ForEach(library.contents.open) { tab in
-                            TabRow(tab: tab, library: library)
+                        ForEach(state.contents.open) { tab in
+                            TabRow(tab: tab, state: state)
                         }
                     }
                     .padding(.horizontal, Design.Sidebar.contentPadding - 4)
@@ -49,7 +49,7 @@ struct SidebarContent: View {
 
                 Spacer(minLength: 0)
 
-                SpaceSwitcher(library: library)
+                SpaceSwitcher(state: state)
                     .padding(.horizontal, Design.Sidebar.contentPadding - 4)
                     .padding(.vertical, 10)
             }
@@ -99,16 +99,16 @@ private struct AddressPill: View {
 // MARK: Favorites
 
 private struct FavoritesGrid: View {
-    let library: Library
+    let state: WindowState
     private let columns = Array(repeating: GridItem(.flexible(), spacing: 6), count: 4)
 
     var body: some View {
         LazyVGrid(columns: columns, spacing: 6) {
-            ForEach(library.contents.favorites) { tab in
-                FavoriteTile(tab: tab, active: tab.id == library.activeTabID) {
-                    library.activate(tab.id)
+            ForEach(state.contents.favorites) { tab in
+                FavoriteTile(tab: tab, active: tab.id == state.activeTabID) {
+                    state.activate(tab.id)
                 }
-                .contextMenu { TabMenu(tab: tab, library: library) }
+                .contextMenu { TabMenu(tab: tab, state: state) }
             }
         }
     }
@@ -141,10 +141,10 @@ private struct FavoriteTile: View {
 
 private struct TabRow: View {
     let tab: BrowserTab
-    let library: Library
+    let state: WindowState
     @State private var hovering = false
 
-    private var active: Bool { tab.id == library.activeTabID }
+    private var active: Bool { tab.id == state.activeTabID }
 
     var body: some View {
         HStack(spacing: 9) {
@@ -157,7 +157,7 @@ private struct TabRow: View {
             Spacer(minLength: 0)
             if hovering {
                 Button {
-                    library.close(tab.id)
+                    state.close(tab.id)
                 } label: {
                     Image(systemName: "xmark")
                         .font(.system(size: 9, weight: .bold))
@@ -176,11 +176,11 @@ private struct TabRow: View {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .fill(.primary.opacity(active ? 0.13 : hovering ? 0.06 : 0)))
         .contentShape(Rectangle())
-        .onTapGesture { library.activate(tab.id) }
+        .onTapGesture { state.activate(tab.id) }
         .onHover { hovering = $0 }
         .animation(.easeOut(duration: 0.12), value: hovering)
         .animation(.easeOut(duration: 0.12), value: active)
-        .contextMenu { TabMenu(tab: tab, library: library) }
+        .contextMenu { TabMenu(tab: tab, state: state) }
     }
 
     private var title: String {
@@ -228,18 +228,18 @@ private struct SectionDivider: View {
 /// The actions every tab offers on right-click.
 private struct TabMenu: View {
     let tab: BrowserTab
-    let library: Library
+    let state: WindowState
 
     var body: some View {
         if tab.section != .favorite {
-            Button("Add to Favorites") { library.move(tab.id, to: .favorite) }
+            Button("Add to Favorites") { state.move(tab.id, to: .favorite) }
         } else {
-            Button("Remove from Favorites") { library.move(tab.id, to: .pinned) }
+            Button("Remove from Favorites") { state.move(tab.id, to: .pinned) }
         }
         if tab.section == .open {
-            Button("Pin Tab") { library.move(tab.id, to: .pinned) }
+            Button("Pin Tab") { state.move(tab.id, to: .pinned) }
         } else if tab.section == .pinned {
-            Button("Unpin Tab") { library.move(tab.id, to: .open) }
+            Button("Unpin Tab") { state.move(tab.id, to: .open) }
         }
         Divider()
         Button("Copy Address") {
@@ -247,7 +247,7 @@ private struct TabMenu: View {
             NSPasteboard.general.setString(tab.url.absoluteString, forType: .string)
         }
         Divider()
-        Button("Close Tab") { library.close(tab.id) }
+        Button("Close Tab") { state.close(tab.id) }
     }
 }
 
@@ -287,22 +287,22 @@ struct SiteIcon: View {
 // MARK: Spaces
 
 private struct SpaceSwitcher: View {
-    let library: Library
+    let state: WindowState
 
     var body: some View {
         HStack(spacing: 6) {
-            Text(library.activeSpace.name)
+            Text(state.space.name)
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
             Spacer(minLength: 8)
-            ForEach(library.spaces) { space in
-                SpaceDot(space: space, active: space.id == library.activeSpace.id) {
-                    library.selectSpace(space.id)
+            ForEach(state.library.spaces) { space in
+                SpaceDot(space: space, active: space.id == state.spaceID) {
+                    state.selectSpace(space.id)
                 }
             }
             Button {
-                library.createSpace(named: "Space \(library.spaces.count + 1)")
+                state.createSpace(named: "Space \(state.library.spaces.count + 1)")
             } label: {
                 Image(systemName: "plus")
                     .font(.system(size: 10, weight: .bold))

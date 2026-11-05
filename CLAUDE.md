@@ -37,6 +37,7 @@ A commit-msg hook refuses any message that contains "claude" or "anthropic", inc
 - `make logs`: stream the app's log messages (subsystem `net.asymptomatic.Chord`).
 - `open -g .build/Build/Products/Debug/Chord.app --args -ChordSidebarPinned YES`: open the app in the background with the sidebar pinned open, for screenshots. Use `-g` so the app does not take keyboard focus from the user.
 - `open -g .build/Build/Products/Debug/Chord.app --args -ChordDatabasePath /tmp/x.sqlite`: run against a separate database file, so testing leaves the real data alone. Add `open -g -a .build/Build/Products/Debug/Chord.app https://example.com` to open tabs in it.
+- `--args -ChordExtraWindows 1` opens more Major Chord windows at launch, for screenshots.
 - `--args -ChordPaletteQuery git` opens the command palette at launch with that text, for screenshots.
 - `--args -ChordShowAirTrafficControl https://example.com` opens Air Traffic Control testing that link, for screenshots.
 - `make clean`: delete build output and the generated Xcode project.
@@ -47,8 +48,9 @@ Change `project.yml`, never the generated project.
 ## Architecture
 
 - `App/Sources` is the AppKit application shell. `main.swift` sets the delegate by hand, because there is no nib. `AppDelegate` opens the database, builds the main menu, and owns the main window.
-- `Library` is the `@Observable` app state over `ChordDatabase`: spaces, the active space's tabs, and the active tab. Views read it and call its methods; it writes to the database, then reloads.
-- `TabSessions` creates one `TabSession` (a `WKWebView`) per tab, the first time the tab is shown. Each profile gets its own `WKWebsiteDataStore(forIdentifier:)`.
+- `Library` is the shared `@Observable` state over `ChordDatabase`: spaces, every space's tabs, rules, and settings. Views read it and call its methods; it writes to the database, then reloads.
+- A Major Chord window is a `BrowserWindowController`. All Major Chord windows share one set of tabs. Each window's own space and active tab are in its `WindowState`.
+- `TabSessions` creates one `TabSession` (a `WKWebView`) per tab, the first time the tab is shown, and shares it across windows. A web view is in one window at a time; the key window claims it, and a background window shows a card instead. Each profile gets its own `WKWebsiteDataStore(forIdentifier:)`.
 - `BrowserWindowController` lays out the page, the sidebar, the drag strip, and the window buttons in code. `keepUpdated` in `Observe.swift` keeps AppKit views in step with `Library`.
 - The command palette (`Palette.swift`) is a SwiftUI overlay. `PaletteResults` in `chord_logic` decides its rows; `BrowserWindowController.paletteCommands()` lists the commands that apply now, and `run(_:)` runs them by id.
 - Air Traffic Control (`AirTrafficControl.swift`) is its own window. `RuleEngine` in `chord_logic` decides routes; `Library.destination(for:)` and `AppDelegate.route(_:)` apply them to links from other apps and to new tabs from the palette.
@@ -68,6 +70,7 @@ Change `project.yml`, never the generated project.
 - The UI has elegant, modern styling. Every surface is intentionally designed. There are no clunky text boxes or generic configuration forms.
 - A command palette controls all actions.
 - A sliding sidebar shows spaces, favorites, and pinned sites.
+- The user can open multiple Major Chord windows with File > New Window. They share one set of tabs.
 - The user can open multiple Minor Chord windows. Each one has minimal chrome and shows a single website. A command-line call can open a new Minor Chord window.
 - Chord is the default handler for `http` and `https` URLs. Air Traffic Control decides whether an opened URL goes to a new Minor Chord window or to a sidebar tab in the main Chord window.
 - Air Traffic Control is the UI for match rules. A rule matches URLs, for example by domain, and triggers actions: augments, tab grouping, profile routing, and window routing. Its UX is custom and polished. Do not use stock SwiftUI forms or controls for it.

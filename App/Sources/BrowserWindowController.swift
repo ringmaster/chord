@@ -3,7 +3,9 @@ import SwiftUI
 import WebKit
 import chord_logic
 
-/// The main Chord window: the sidebar and the active tab's page.
+/// A Major Chord window: the sidebar and the active tab's page. Every Major
+/// Chord window shows the same spaces and tabs; each has its own space and
+/// active tab, kept in `state`.
 ///
 /// There is no address bar; the command palette does that job. The window's
 /// own controls are:
@@ -15,6 +17,7 @@ import chord_logic
 final class BrowserWindowController: NSWindowController, NSWindowDelegate {
     let library: Library
     let sessions: TabSessions
+    let state: WindowState
     /// Runs when the window closes, so the owner can release this controller.
     var onClose: (() -> Void)?
 
@@ -30,13 +33,18 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
     private var flyout: SidebarFlyout
     private var hideTask: Task<Void, Never>?
     private weak var shownWebView: WKWebView?
+    /// Shown in place of the page while another window shows this tab.
+    private var elsewhereView: NSView?
 
-    init(library: Library, sessions: TabSessions) {
+    init(library: Library, sessions: TabSessions, spaceID: UUID, showRecentTab: Bool) {
         self.library = library
         self.sessions = sessions
+        self.state = WindowState(library: library, spaceID: spaceID, showRecentTab: showRecentTab)
         // `open Chord.app --args -ChordSidebarPinned YES` starts with the
         // sidebar pinned open, so screenshots can show it without key presses.
-        let pinnedOverride = UserDefaults.standard.object(forKey: "ChordSidebarPinned") as? Bool
+        let defaults = UserDefaults.standard
+        let pinnedOverride = defaults.object(forKey: "ChordSidebarPinned") == nil
+            ? nil : defaults.bool(forKey: "ChordSidebarPinned")
         flyout = SidebarFlyout(isPinned: pinnedOverride ?? library.sidebarPinned)
 
         let window = NSWindow(
@@ -59,7 +67,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
         window.delegate = self
 
         sidebar = SidebarView(content: SidebarContent(
-            library: library,
+            state: state,
             onOpenPalette: { [weak self] in self?.openPalette(nil) },
             onNewTab: { [weak self] in self?.newTab(nil) }))
         buildViews()
@@ -107,6 +115,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
         pageContainer.frame = pageFrame
         pageContainer.layer?.cornerRadius = pagePinned ? Design.Page.cornerRadius : 0
         shownWebView?.frame = pageContainer.bounds
+        elsewhereView?.frame = pageContainer.bounds
 
         let strip = Design.Edge.dragStripHeight
         dragStrip.frame = NSRect(x: pageFrame.minX, y: bounds.height - strip,
@@ -127,22 +136,68 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
     // MARK: Active tab
 
     /// Shows the active tab's web view, creating it the first time.
+    ///
+    /// A web view can be in only one window. When another window shows this
+    /// tab, the key window takes the web view, and a window in the background
+    /// shows a card that offers to bring the page back.
     private func showActiveTab() {
-        let tab = library.activeTab
-        sessions.prune(keeping: library.visibleTabs)
-        guard let tab else {
-            shownWebView?.removeFromSuperview()
-            shownWebView = nil
+        state.reconcile()
+        sessions.prune(keeping: library.allTabs)
+        guard let tab = state.activeTab else {
+            removeShownWebView()
+            showElsewhereCard(false)
             return
         }
         let webView = sessions.session(for: tab).webView
-        guard webView !== shownWebView else { return }
-        shownWebView?.removeFromSuperview()
+        let me = ObjectIdentifier(self)
+        let host = sessions.hosts[tab.id]
+        let mayClaim = host == nil || host == me || window?.isKeyWindow == true
+        guard mayClaim else {
+            if shownWebView?.superview === pageContainer { removeShownWebView() }
+            showElsewhereCard(true)
+            return
+        }
+        sessions.claim(tabID: tab.id, by: me, state: state)
+        showElsewhereCard(false)
+        guard webView.superview !== pageContainer else {
+            shownWebView = webView
+            return
+        }
+        removeShownWebView()
         webView.frame = pageContainer.bounds
         webView.autoresizingMask = [.width, .height]
         pageContainer.addSubview(webView)
         shownWebView = webView
-        window?.makeFirstResponder(webView)
+        if paletteHost == nil {
+            window?.makeFirstResponder(webView)
+        }
+    }
+
+    /// Takes the page out of this window, unless another window already took it.
+    private func removeShownWebView() {
+        if shownWebView?.superview === pageContainer {
+            shownWebView?.removeFromSuperview()
+        }
+        shownWebView = nil
+    }
+
+    private func showElsewhereCard(_ show: Bool) {
+        if show, elsewhereView == nil {
+            let card = NSHostingView(rootView: ElsewhereCard { [weak self] in self?.bringPageHere() })
+            card.frame = pageContainer.bounds
+            card.autoresizingMask = [.width, .height]
+            pageContainer.addSubview(card)
+            elsewhereView = card
+        } else if !show, let card = elsewhereView {
+            card.removeFromSuperview()
+            elsewhereView = nil
+        }
+    }
+
+    private func bringPageHere() {
+        guard let tab = state.activeTab else { return }
+        sessions.claim(tabID: tab.id, by: ObjectIdentifier(self), state: state)
+        showActiveTab()
     }
 
     // MARK: Actions
@@ -154,17 +209,17 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
 
     /// Command-L: the palette, filled with the active tab's address.
     @objc func openPalette(_ sender: Any?) {
-        let address = library.activeTab?.url.absoluteString ?? ""
-        showPalette(mode: library.activeTab == nil ? .newTab : .currentTab, initialText: address)
+        let address = state.activeTab?.url.absoluteString ?? ""
+        showPalette(mode: state.activeTab == nil ? .newTab : .currentTab, initialText: address)
     }
 
     @objc func closeTab(_ sender: Any?) {
-        guard let id = library.activeTabID else { return }
-        library.close(id)
+        guard let id = state.activeTabID else { return }
+        state.close(id)
     }
 
     @objc func copyAddress(_ sender: Any?) {
-        guard let url = library.activeTab?.url else { return }
+        guard let url = state.activeTab?.url else { return }
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(url.absoluteString, forType: .string)
     }
@@ -186,7 +241,8 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
     func showPalette(mode: PaletteMode, initialText: String) {
         dismissPalette()
         let model = PaletteModel(
-            mode: mode, initialText: initialText, library: library, commands: paletteCommands(),
+            mode: mode, initialText: initialText, library: library, tabs: state.visibleTabs,
+            commands: paletteCommands(),
             onPerform: { [weak self] item, mode in self?.perform(item, mode: mode) },
             onDismiss: { [weak self] in self?.dismissPalette() })
         let host = NSHostingView(rootView: PaletteView(model: model))
@@ -216,7 +272,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
         case .history(let entry):
             load(entry.url, mode: mode)
         case .tab(let tab):
-            library.activate(tab.id)
+            state.activate(tab.id)
         case .command(let command):
             run(command.id)
         }
@@ -226,9 +282,9 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
         if mode == .currentTab, let shownWebView {
             shownWebView.load(URLRequest(url: url))
         } else if let appDelegate {
-            appDelegate.route(url)
+            appDelegate.route(url, from: self)
         } else {
-            library.openTab(url)
+            state.openTab(url)
         }
     }
 
@@ -236,6 +292,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
     private func paletteCommands() -> [PaletteCommand] {
         var commands = [
             PaletteCommand(id: "new-tab", title: "New Tab", symbol: "plus", shortcut: "⌘T"),
+            PaletteCommand(id: "new-window", title: "New Window", symbol: "macwindow.badge.plus", shortcut: "⌘N"),
             PaletteCommand(id: "toggle-sidebar", title: "Toggle Sidebar", symbol: "sidebar.left", shortcut: "⌘S"),
             PaletteCommand(id: "reload", title: "Reload Page", symbol: "arrow.clockwise",
                            keywords: ["refresh"], shortcut: "⌘R"),
@@ -245,7 +302,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
                            keywords: ["url"], shortcut: "⇧⌘C"),
             PaletteCommand(id: "close-tab", title: "Close Tab", symbol: "xmark", shortcut: "⌘W"),
         ]
-        if let tab = library.activeTab {
+        if let tab = state.activeTab {
             switch tab.section {
             case .open:
                 commands.append(PaletteCommand(id: "pin-tab", title: "Pin Tab", symbol: "pin"))
@@ -261,12 +318,12 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
         commands.append(PaletteCommand(id: "air-traffic-control", title: "Air Traffic Control",
                                        symbol: "point.3.filled.connected.trianglepath.dotted",
                                        keywords: ["rules", "routing", "route"], shortcut: "⌘,"))
-        if library.activeTab != nil {
+        if state.activeTab != nil {
             commands.append(PaletteCommand(id: "route-site", title: "Route This Site…",
                                            symbol: "arrow.triangle.branch", keywords: ["rule"]))
         }
         commands.append(PaletteCommand(id: "new-space", title: "New Space", symbol: "square.stack"))
-        for space in library.spaces where space.id != library.activeSpace.id {
+        for space in library.spaces where space.id != state.spaceID {
             commands.append(PaletteCommand(id: "space:\(space.id.uuidString)", title: "Switch to \(space.name)",
                                            symbol: "square.stack", keywords: ["space"]))
         }
@@ -284,7 +341,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
 
     private func run(_ commandID: String) {
         if commandID.hasPrefix("space:"), let id = UUID(uuidString: String(commandID.dropFirst(6))) {
-            library.selectSpace(id)
+            state.selectSpace(id)
             return
         }
         if commandID.hasPrefix("engine:") {
@@ -296,21 +353,22 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
         }
         switch commandID {
         case "new-tab": newTab(nil)
+        case "new-window": appDelegate?.newWindow(nil)
         case "toggle-sidebar": toggleSidebar(nil)
         case "reload": reloadPage(nil)
         case "back": goBack(nil)
         case "forward": goForward(nil)
         case "copy-address": copyAddress(nil)
         case "close-tab": closeTab(nil)
-        case "pin-tab": library.activeTabID.map { library.move($0, to: .pinned) }
-        case "unpin-tab": library.activeTabID.map { library.move($0, to: .open) }
-        case "favorite-tab": library.activeTabID.map { library.move($0, to: .favorite) }
-        case "unfavorite-tab": library.activeTabID.map { library.move($0, to: .pinned) }
-        case "new-space": library.createSpace(named: "Space \(library.spaces.count + 1)")
+        case "pin-tab": state.activeTabID.map { state.move($0, to: .pinned) }
+        case "unpin-tab": state.activeTabID.map { state.move($0, to: .open) }
+        case "favorite-tab": state.activeTabID.map { state.move($0, to: .favorite) }
+        case "unfavorite-tab": state.activeTabID.map { state.move($0, to: .pinned) }
+        case "new-space": state.createSpace(named: "Space \(library.spaces.count + 1)")
         case "default-browser": DefaultBrowser.request()
         case "clear-history": library.clearHistory()
-        case "air-traffic-control": appDelegate?.showAirTrafficControl(routing: nil)
-        case "route-site": appDelegate?.showAirTrafficControl(routing: library.activeTab?.url)
+        case "air-traffic-control": appDelegate?.showAirTrafficControl(routing: nil, spaceID: state.spaceID)
+        case "route-site": appDelegate?.showAirTrafficControl(routing: state.activeTab?.url, spaceID: state.spaceID)
         default: AppDelegate.log.error("Unknown palette command \(commandID, privacy: .public)")
         }
     }
@@ -413,6 +471,8 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
 
     func windowDidBecomeKey(_ notification: Notification) {
         placeWindowButtons()
+        // Take back the active tab's page if another window showed it.
+        showActiveTab()
     }
 
     func windowDidExitFullScreen(_ notification: Notification) {
@@ -421,6 +481,27 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
 
     func windowWillClose(_ notification: Notification) {
         hideTask?.cancel()
+        removeShownWebView()
+        sessions.release(window: ObjectIdentifier(self))
         onClose?()
+    }
+}
+
+/// The card a background window shows while another window shows its tab.
+private struct ElsewhereCard: View {
+    let onBringHere: () -> Void
+
+    var body: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "macwindow.on.rectangle")
+                .font(.system(size: 30, weight: .light))
+                .foregroundStyle(.tertiary)
+            Text("This tab is showing in another window")
+                .font(.system(size: 14, weight: .semibold))
+            Button("Show It Here", action: onBringHere)
+                .buttonStyle(QuietButtonStyle(prominent: true))
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(.background)
     }
 }

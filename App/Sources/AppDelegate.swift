@@ -3,14 +3,14 @@ import OSLog
 import chord_logic
 
 /// The application shell. It opens the database, builds the main menu, and
-/// owns the main window.
+/// owns the Major Chord windows, which all share one set of tabs.
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     static let log = Logger(subsystem: "net.asymptomatic.Chord", category: "app")
 
     private var library: Library?
     private var sessions: TabSessions?
-    private var mainWindow: BrowserWindowController?
+    private var windows: [BrowserWindowController] = []
     private var airTrafficControl: AirTrafficControlWindowController?
     /// Links that arrived before the database was open.
     private var pendingURLs: [URL] = []
@@ -39,22 +39,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        showMainWindow(nil)
+        let first = frontWindow()
         if !pendingURLs.isEmpty {
             application(NSApp, open: pendingURLs)
             pendingURLs = []
-        } else if library?.activeTab == nil {
-            mainWindow?.newTab(nil)
+        } else if first?.state.activeTab == nil {
+            first?.newTab(nil)
+        }
+        // `--args -ChordExtraWindows 1` opens more Major Chord windows at
+        // launch, so screenshots can show shared tabs without key presses.
+        for _ in 0..<UserDefaults.standard.integer(forKey: "ChordExtraWindows") {
+            newWindow(nil)
         }
         // `--args -ChordPaletteQuery text` opens the palette with that text,
         // so screenshots can show it without key presses.
         if let query = UserDefaults.standard.string(forKey: "ChordPaletteQuery") {
-            mainWindow?.showPalette(mode: .newTab, initialText: query)
+            first?.showPalette(mode: .newTab, initialText: query)
         }
         // `--args -ChordShowAirTrafficControl https://example.com` opens Air
         // Traffic Control testing that link, for screenshots.
         if let test = UserDefaults.standard.string(forKey: "ChordShowAirTrafficControl") {
-            showAirTrafficControl(routing: URL(string: test))
+            showAirTrafficControl(routing: URL(string: test), spaceID: first?.state.spaceID)
         }
         NSApp.activate()
     }
@@ -67,21 +72,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         for url in urls where HistoryRanking.isRecordable(url) {
-            route(url)
+            route(url, from: nil)
         }
     }
 
-    /// Opens `url` where the rules send it.
-    func route(_ url: URL) {
-        guard let library else { return }
-        switch library.destination(for: url) {
+    /// Opens `url` where the rules send it. A link routed to a space opens
+    /// in `window`, or in the frontmost Major Chord window, which switches to
+    /// that space. With no route, it opens in that window's current space.
+    func route(_ url: URL, from window: BrowserWindowController?) {
+        guard let library, let target = window ?? frontWindow() else { return }
+        switch library.destination(for: url, fallbackSpace: target.state.spaceID) {
         case .space(let spaceID):
-            showMainWindow(nil)
-            library.openTab(url, inSpace: spaceID)
+            target.state.selectSpace(spaceID)
+            target.state.openTab(url)
+            target.showWindow(nil)
         case .minorChord:
             // Minor Chord windows arrive in Phase 4. Until then, open a tab.
-            showMainWindow(nil)
-            library.openTab(url)
+            target.state.openTab(url)
+            target.showWindow(nil)
         }
     }
 
@@ -91,34 +99,68 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
         if !hasVisibleWindows {
-            showMainWindow(nil)
+            frontWindow()?.showWindow(nil)
         }
         return true
     }
 
-    /// Shows the main window, creating it when it was closed.
-    @objc func showMainWindow(_ sender: Any?) {
-        guard let library, let sessions else { return }
-        if mainWindow == nil {
-            let controller = BrowserWindowController(library: library, sessions: sessions)
-            controller.onClose = { [weak self] in self?.mainWindow = nil }
-            mainWindow = controller
+    /// The frontmost Major Chord window, creating one when none is open.
+    @discardableResult
+    private func frontWindow() -> BrowserWindowController? {
+        let ordered = NSApp.orderedWindows.compactMap { window in
+            windows.first { $0.window === window }
         }
-        mainWindow?.showWindow(nil)
+        if let front = ordered.first ?? windows.last {
+            return front
+        }
+        return makeWindow()
     }
 
-    /// Shows the Air Traffic Control window. With a page URL, the window
-    /// tests it and adds a rule for its site when none routes it.
-    func showAirTrafficControl(routing pageURL: URL?) {
+    /// Opens a new Major Chord window. It shows the same tabs as the others,
+    /// starting in the space used most recently.
+    @objc func newWindow(_ sender: Any?) {
+        guard let controller = makeWindow() else { return }
+        if controller.state.activeTab == nil {
+            controller.newTab(nil)
+        }
+    }
+
+    @discardableResult
+    private func makeWindow() -> BrowserWindowController? {
+        guard let library, let sessions else { return nil }
+        // The first window reopens the last tab. Later windows start on a new tab.
+        let controller = BrowserWindowController(library: library, sessions: sessions,
+                                                 spaceID: library.lastSpaceID, showRecentTab: windows.isEmpty)
+        controller.onClose = { [weak self, weak controller] in
+            self?.windows.removeAll { $0 === controller }
+        }
+        if let previous = windows.last?.window, let window = controller.window {
+            // Each new window steps down and right from the last one.
+            window.setFrameTopLeftPoint(window.cascadeTopLeft(from: NSPoint(x: previous.frame.minX,
+                                                                            y: previous.frame.maxY)))
+        }
+        windows.append(controller)
+        controller.showWindow(nil)
+        return controller
+    }
+
+    /// Brings the front Major Chord window forward, opening one when none is open.
+    @objc func showMainWindow(_ sender: Any?) {
+        frontWindow()?.showWindow(nil)
+    }
+
+    /// Shows the Air Traffic Control window. With a page URL, the window tests
+    /// it and adds a rule for its site, routed to `spaceID`, when none routes it.
+    func showAirTrafficControl(routing pageURL: URL?, spaceID: UUID?) {
         guard let library else { return }
         if airTrafficControl == nil {
             airTrafficControl = AirTrafficControlWindowController(library: library)
         }
-        airTrafficControl?.show(routing: pageURL)
+        airTrafficControl?.show(routing: pageURL, spaceID: spaceID ?? library.lastSpaceID)
     }
 
     @objc func showAirTrafficControl(_ sender: Any?) {
-        showAirTrafficControl(routing: nil)
+        showAirTrafficControl(routing: nil, spaceID: nil)
     }
 
     // MARK: Menu
@@ -138,6 +180,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         mainMenu.addItem(submenu(appMenu))
 
         let fileMenu = NSMenu(title: "File")
+        fileMenu.addItem(withTitle: "New Window", action: #selector(newWindow(_:)), keyEquivalent: "n")
         fileMenu.addItem(withTitle: "New Tab", action: #selector(BrowserWindowController.newTab(_:)),
                          keyEquivalent: "t")
         fileMenu.addItem(withTitle: "Open Location…", action: #selector(BrowserWindowController.openPalette(_:)),
