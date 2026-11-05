@@ -221,6 +221,8 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
     private func load(_ url: URL, mode: PaletteMode) {
         if mode == .currentTab, let shownWebView {
             shownWebView.load(URLRequest(url: url))
+        } else if let delegate = NSApp.delegate as? AppDelegate {
+            delegate.route(url)
         } else {
             library.openTab(url)
         }

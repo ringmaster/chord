@@ -53,15 +53,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate()
     }
 
-    /// Opens http and https links that other apps send, each in a new tab.
-    /// Air Traffic Control routing replaces this in a later phase.
+    /// Opens http and https links that other apps send. Air Traffic Control
+    /// rules decide where each one goes.
     func application(_ application: NSApplication, open urls: [URL]) {
-        guard let library else {
+        guard library != nil else {
             pendingURLs.append(contentsOf: urls)
             return
         }
-        showMainWindow(nil)
         for url in urls where HistoryRanking.isRecordable(url) {
+            route(url)
+        }
+    }
+
+    /// Opens `url` where the rules send it.
+    func route(_ url: URL) {
+        guard let library else { return }
+        switch library.destination(for: url) {
+        case .space(let spaceID):
+            showMainWindow(nil)
+            library.openTab(url, inSpace: spaceID)
+        case .minorChord:
+            // Minor Chord windows arrive in Phase 4. Until then, open a tab.
+            showMainWindow(nil)
             library.openTab(url)
         }
     }

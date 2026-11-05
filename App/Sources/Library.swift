@@ -19,6 +19,9 @@ final class Library {
     private(set) var contents: SpaceContents
     private(set) var activeTabID: UUID?
     private(set) var searchEngine: SearchEngine = .duckDuckGo
+    /// Air Traffic Control rules, in the order the engine checks them.
+    private(set) var rules: [Rule] = []
+    private(set) var profiles: [Profile] = []
     var sidebarPinned: Bool {
         didSet { save(.sidebarPinned, sidebarPinned ? "1" : "0") }
     }
@@ -41,6 +44,8 @@ final class Library {
         self.spaces = spaces
         contents = try database.contents(ofSpace: space.id)
         searchEngine = try database.searchEngine()
+        rules = try database.rules()
+        profiles = try database.profiles()
         sidebarPinned = try database.setting(.sidebarPinned).map { $0 == "1" } ?? true
         activeTabID = mostRecentTab()?.id
     }
@@ -112,6 +117,73 @@ final class Library {
         attempt("update tab") {
             try database.updateTab(id: tabID, url: url, title: title)
             try reloadContents()
+        }
+    }
+
+    // MARK: Routing
+
+    /// What the rules decide for `url`.
+    func decide(_ url: URL) -> RoutingDecision {
+        RuleEngine.decide(url, rules: rules)
+    }
+
+    /// Where a URL from outside the current tab opens: a link from another
+    /// app, or an address typed into the palette for a new tab.
+    enum Destination: Equatable {
+        case space(UUID)
+        case minorChord(profileID: UUID)
+    }
+
+    /// The destination for `url`. A route to a space or profile that no
+    /// longer exists falls back to the active space.
+    func destination(for url: URL) -> Destination {
+        switch decide(url).route {
+        case .space(let id) where spaces.contains(where: { $0.id == id }):
+            return .space(id)
+        case .minorChord(let profileID) where profiles.contains(where: { $0.id == profileID }):
+            return .minorChord(profileID: profileID)
+        default:
+            return .space(contents.space.id)
+        }
+    }
+
+    /// Opens `url` in a new tab in `spaceID`, switching to that space first.
+    @discardableResult
+    func openTab(_ url: URL, inSpace spaceID: UUID) -> BrowserTab? {
+        selectSpace(spaceID)
+        return openTab(url)
+    }
+
+    // MARK: Rules
+
+    @discardableResult
+    func addRule(matcher: URLMatcher, actions: RuleActions) -> Rule? {
+        var added: Rule?
+        attempt("add rule") {
+            added = try database.addRule(matcher: matcher, actions: actions)
+            rules = try database.rules()
+        }
+        return added
+    }
+
+    func updateRule(_ rule: Rule) {
+        attempt("update rule") {
+            try database.updateRule(rule)
+            rules = try database.rules()
+        }
+    }
+
+    func deleteRule(_ id: UUID) {
+        attempt("delete rule") {
+            try database.deleteRule(id: id)
+            rules = try database.rules()
+        }
+    }
+
+    func moveRule(_ id: UUID, to index: Int) {
+        attempt("move rule") {
+            try database.moveRule(id: id, to: index)
+            rules = try database.rules()
         }
     }
 
