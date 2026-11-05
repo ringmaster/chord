@@ -1,0 +1,40 @@
+name: Chord
+options:
+  bundleIdPrefix: net.asymptomatic
+  deploymentTarget:
+    # macOS 26 is the first version with both WKWebExtensionController (web
+    # extensions) and the Foundation Models framework (the native Apple model).
+    macOS: "26.0"
+packages:
+  chord_logic:
+    path: Packages/chord_logic
+targets:
+  Chord:
+    type: application
+    platform: macOS
+    sources: [App/Sources]
+    dependencies:
+      - package: chord_logic
+    settings:
+      base:
+        INFOPLIST_FILE: App/Info.plist
+        GENERATE_INFOPLIST_FILE: NO
+        SWIFT_VERSION: "6.0"
+        DEVELOPMENT_TEAM: 5FD8ZXLZ4V
+      configs:
+        # Debug runs on this machine only. The hardened runtime would only get
+        # in the way of a debugger.
+        Debug:
+          CODE_SIGN_IDENTITY: "Apple Development"
+          CODE_SIGN_STYLE: Automatic
+          ENABLE_HARDENED_RUNTIME: NO
+        # Release is distributed directly, outside the Mac App Store, so it can
+        # use the private WebKit inspector API. Notarization requires the
+        # hardened runtime and a secure timestamp.
+        Release:
+          CODE_SIGN_IDENTITY: "Developer ID Application"
+          CODE_SIGN_STYLE: Manual
+          ENABLE_HARDENED_RUNTIME: YES
+          OTHER_CODE_SIGN_FLAGS: "--timestamp"
+          ONLY_ACTIVE_ARCH: NO
+          ARCHS: "$(ARCHS_STANDARD)"
