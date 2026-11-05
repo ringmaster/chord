@@ -155,6 +155,15 @@ public final class ChordDatabase: Sendable {
             }
         }
 
+        migrator.registerMigration("v6-agent-tasks") { db in
+            try db.create(table: "agentTask") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("text", .text).notNull().unique()
+                t.column("useCount", .integer).notNull()
+                t.column("lastUsedAt", .datetime).notNull().indexed()
+            }
+        }
+
         return migrator
     }
 

@@ -37,6 +37,9 @@ public enum PaletteItem: Equatable, Sendable {
     /// Fill a saved login into the page. These rows appear only when the
     /// palette is choosing a login.
     case login(LoginItem)
+    /// Run a page action on the current page. `previous` is true for a task
+    /// the user ran before, false for the text they typed.
+    case pageAction(task: String, previous: Bool)
 }
 
 /// Scores how well text matches what the user typed.
@@ -101,6 +104,38 @@ public enum PaletteResults {
     public static let maximumCommands = 4
     public static let maximumHistory = 6
     public static let maximumBookmarks = 4
+    public static let maximumPageActions = 8
+    /// Text that starts with this runs a page action instead of a search.
+    public static let pageActionPrefix = "$"
+
+    /// The task in `query` when it starts with "$", without the "$" and
+    /// the spaces around it. Nil when it does not start with "$".
+    public static func pageActionTask(in query: String) -> String? {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.hasPrefix(pageActionPrefix) else { return nil }
+        return trimmed.dropFirst(pageActionPrefix.count).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// The rows for a "$" query:
+    /// 1. the typed task, when there is one,
+    /// 2. previous tasks that match it, best first, or the most recent ones
+    ///    when only "$" is typed.
+    /// A previous task with the same text as the typed one is not repeated.
+    public static func pageActionRows(task: String, previous: [String]) -> [PaletteItem] {
+        guard !task.isEmpty else {
+            return previous.prefix(maximumPageActions).map { .pageAction(task: $0, previous: true) }
+        }
+        let matches = previous.enumerated()
+            .filter { $0.element.caseInsensitiveCompare(task) != .orderedSame }
+            .compactMap { index, text -> (String, Double, Int)? in
+                FuzzyMatch.score(task, in: text).map { (text, $0, index) }
+            }
+            // Equal scores keep the most recent first.
+            .sorted { $0.1 != $1.1 ? $0.1 > $1.1 : $0.2 < $1.2 }
+            .prefix(maximumPageActions - 1)
+            .map { PaletteItem.pageAction(task: $0.0, previous: true) }
+        return [.pageAction(task: task, previous: false)] + matches
+    }
 
     /// The rows, in this order:
     /// 1. one primary row: the typed address, or a search,
@@ -112,9 +147,17 @@ public enum PaletteResults {
     /// With nothing typed, the rows are the most recent tabs, then the commands.
     /// When the query matches a command's title from its start, commands come
     /// before tabs, so typing "tog" puts "Toggle Sidebar" near the top.
+    ///
+    /// With `pageActions` (the previous tasks, most recent first), text that
+    /// starts with "$" gives only page action rows. Pass nil when there is no
+    /// page to act on; "$" text is then searched like other text.
     public static func build(query: String, tabs: [BrowserTab], commands: [PaletteCommand],
                              history: [HistoryEntry], bookmarks: [ServiceBookmark] = [],
+                             pageActions: [String]? = nil,
                              engine: SearchEngine) -> [PaletteItem] {
+        if let pageActions, let task = pageActionTask(in: query) {
+            return pageActionRows(task: task, previous: pageActions)
+        }
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty {
             let recent = tabs.sorted { ($0.lastActivatedAt ?? .distantPast) > ($1.lastActivatedAt ?? .distantPast) }

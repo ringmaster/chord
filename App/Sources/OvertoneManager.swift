@@ -40,9 +40,14 @@ final class OvertoneManager {
         return support.appending(path: "Chord/Overtones")
     }
 
-    /// Reads the folder again and tells open pages.
+    /// Reads the folder again and tells open pages when anything changed.
+    /// A page action reloads at once after a write, and the folder watcher
+    /// reloads again a moment later; the second one finds no change, so the
+    /// page reloads only once.
     func reload() {
-        overtones = OvertoneLibrary.load(from: folder)
+        let loaded = OvertoneLibrary.load(from: folder)
+        guard loaded != overtones else { return }
+        overtones = loaded
         OvertoneManager.log.notice("Loaded \(self.overtones.count) overtones")
         NotificationCenter.default.post(name: .overtonesChanged, object: self)
     }
@@ -149,5 +154,46 @@ final class OvertoneBinding {
         guard !now.isEmpty || !installedIDs.isEmpty else { return }
         prepare(for: url)
         webView.reload()
+    }
+}
+
+/// The overtone a page action writes: the folder for the page's domain when
+/// the action started. A write reloads the overtones at once, which reloads
+/// the page, and returns after the page has loaded with the change.
+@MainActor
+final class FolderOvertoneWorkspace: OvertoneWorkspace {
+    let folder: URL
+    private let manager: OvertoneManager
+    private weak var webView: WKWebView?
+    /// True after the first file was written or deleted.
+    private(set) var hasWritten = false
+
+    /// Nil when the page has no domain to write an overtone for.
+    init?(manager: OvertoneManager, webView: WKWebView) {
+        guard let url = webView.url,
+              let name = OvertoneFiles.folderName(for: url, existing: manager.overtones) else { return nil }
+        self.folder = manager.folder.appending(path: name)
+        self.manager = manager
+        self.webView = webView
+    }
+
+    func context() -> OvertoneContext {
+        OvertoneContext(folderName: folder.lastPathComponent, files: OvertoneFiles.read(folder))
+    }
+
+    func write(file: String, content: String) async throws {
+        try OvertoneFiles.write(file, content: content, in: folder)
+        hasWritten = true
+        OvertoneManager.log.notice("Page action wrote \(file, privacy: .public) in \(self.folder.lastPathComponent, privacy: .public)")
+        manager.reload()
+        // The page reload starts from a notification; give it a moment, then
+        // wait for the load and for the overtone's scripts to run.
+        try? await Task.sleep(for: .milliseconds(300))
+        var waited = 0
+        while webView?.isLoading == true && waited < 100 {
+            try? await Task.sleep(for: .milliseconds(100))
+            waited += 1
+        }
+        try? await Task.sleep(for: .milliseconds(500))
     }
 }

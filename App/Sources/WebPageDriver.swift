@@ -17,14 +17,17 @@ final class WebPageDriver: PageDriver {
     /// The most page text a snapshot includes. The Apple model has a small
     /// context, so it gets less.
     private let maximumText: Int
+    /// The most outline text a snapshot includes.
+    private let maximumOutline: Int
 
-    init(webView: WKWebView, maximumText: Int) {
+    init(webView: WKWebView, maximumText: Int, maximumOutline: Int) {
         self.webView = webView
         self.maximumText = maximumText
+        self.maximumOutline = maximumOutline
     }
 
     func snapshot() async throws -> PageSnapshot {
-        let json = try await run(Self.snapshotScript, arguments: ["maxText": maximumText])
+        let json = try await run(Self.snapshotScript, arguments: ["maxText": maximumText, "maxOutline": maximumOutline])
         guard let snapshot = try? JSONDecoder().decode(PageSnapshot.self, from: Data(json.utf8)) else {
             throw DriverError(errorDescription: "The page could not be read.")
         }
@@ -42,7 +45,8 @@ final class WebPageDriver: PageDriver {
         case .scroll(let down):
             _ = try await run("window.scrollBy(0, (down ? 1 : -1) * window.innerHeight * 0.8); return 'ok';",
                               arguments: ["down": down])
-        case .finish:
+        case .finish, .writeOvertone:
+            // The runner sends overtone writes to the overtone workspace.
             return
         }
         await settle()
@@ -112,7 +116,50 @@ final class WebPageDriver: PageDriver {
           if (id >= 80) break;
         }
         const text = (document.body ? document.body.innerText : '').replace(/\\s+/g, ' ').slice(0, maxText);
-        return JSON.stringify({ url: location.href, title: document.title, text, elements });
+
+        // An indented outline of the page's elements with ids and classes, for
+        // writing CSS selectors. Runs of siblings that look the same are
+        // shown once with a count, and the outline stops at maxOutline.
+        const skip = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT', 'TEMPLATE', 'LINK', 'META', 'BR', 'WBR']);
+        const describe = (el) => {
+          let line = el.tagName.toLowerCase();
+          if (el.id) line += '#' + el.id;
+          const classes = typeof el.className === 'string' ? el.className.trim().split(/\\s+/).filter(c => c).slice(0, 4) : [];
+          if (classes.length) line += '.' + classes.join('.');
+          const role = el.getAttribute('role');
+          if (role) line += `[role=${role}]`;
+          return line;
+        };
+        const lines = [];
+        let size = 0;
+        const walk = (el, depth) => {
+          if (size > maxOutline || depth > 14) return;
+          const kids = Array.from(el.children).filter(k => !skip.has(k.tagName));
+          let index = 0;
+          while (index < kids.length && size <= maxOutline) {
+            const kid = kids[index];
+            const signature = describe(kid);
+            let run = 1;
+            while (index + run < kids.length && describe(kids[index + run]) === signature) run += 1;
+            if (kid.tagName === 'svg') {
+              index += run;
+              continue;
+            }
+            const own = Array.from(kid.childNodes).filter(n => n.nodeType === 3).map(n => n.textContent).join(' ')
+              .trim().replace(/\\s+/g, ' ').slice(0, 40);
+            const line = '  '.repeat(depth) + signature + (run > 1 ? ` ×${run}` : '') + (own ? ` "${own}"` : '');
+            lines.push(line);
+            size += line.length + 1;
+            walk(kid, depth + 1);
+            index += run;
+          }
+        };
+        if (document.body) {
+          lines.push(describe(document.body));
+          walk(document.body, 1);
+        }
+        const outline = lines.join('\\n').slice(0, maxOutline);
+        return JSON.stringify({ url: location.href, title: document.title, text, elements, outline });
         """
 
     static let clickScript = """

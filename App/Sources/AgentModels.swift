@@ -8,7 +8,7 @@ import chord_logic
 struct AppleAgentReply {
     @Guide(description: "Why this step moves the task forward")
     var thought: String
-    @Guide(description: "One of: click, type, navigate, scroll_down, scroll_up, finish")
+    @Guide(description: "One of: click, type, navigate, scroll_down, scroll_up, write_overtone, finish")
     var action: String
     @Guide(description: "The number of the element to click or type into, if any")
     var elementID: Int?
@@ -18,6 +18,10 @@ struct AppleAgentReply {
     var url: String?
     @Guide(description: "True to press Return after typing")
     var submit: Bool?
+    @Guide(description: "The overtone file name, such as style.css, if the action is write_overtone")
+    var file: String?
+    @Guide(description: "The whole new text of that file, if the action is write_overtone")
+    var content: String?
     @Guide(description: "What to tell the user, if the action is finish")
     var answer: String?
 }
@@ -53,7 +57,8 @@ struct AppleAgentModel: PageAgentModel {
         do {
             let reply = try await session.respond(to: prompt, generating: AppleAgentReply.self).content
             return AgentDecisionPayload(thought: reply.thought, action: reply.action, elementID: reply.elementID,
-                                        text: reply.text, url: reply.url, submit: reply.submit, answer: reply.answer)
+                                        text: reply.text, url: reply.url, submit: reply.submit,
+                                        file: reply.file, content: reply.content, answer: reply.answer)
         } catch {
             throw AgentModelError.unavailable(error.localizedDescription)
         }

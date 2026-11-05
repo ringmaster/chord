@@ -35,6 +35,8 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
     private var paletteModel: PaletteModel?
     /// Watches key presses while the palette is open. See `handlePaletteKey`.
     private var paletteKeyMonitor: Any?
+    /// The time of the last key event the palette used.
+    private var paletteKeyTimestamp: TimeInterval = -1
 
     private var flyout: SidebarFlyout
     private var hideTask: Task<Void, Never>?
@@ -377,18 +379,28 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
     private var toastHost: NSView?
     private var agentHost: NSView?
     private var agentSession: AgentSession?
+    private var agentKeyMonitor: Any?
 
-    /// Shows the page actions card at the bottom of the page.
+    /// Command-J: opens the palette with "$", which lists previous page
+    /// actions and runs what the user types after it.
     @objc func askChord(_ sender: Any?) {
-        guard agentHost == nil else {
-            window?.makeFirstResponder(agentHost)
-            return
-        }
-        let session = AgentSession { [weak self] in self?.closeAgentCard() }
+        guard state.activeTab != nil else { return }
+        showPalette(mode: .currentTab, initialText: PaletteResults.pageActionPrefix, selectingText: false)
+    }
+
+    /// Runs `task` on the shown page and shows its card at the bottom of the
+    /// page. A run already in progress stops first.
+    func runPageAction(_ task: String) {
+        guard let webView = shownWebView else { return }
+        try? library.database.recordAgentTask(task)
+        closeAgentCard()
+        let overtones = appDelegate?.overtones.flatMap { FolderOvertoneWorkspace(manager: $0, webView: webView) }
+        let session = AgentSession(task: task, webView: webView, model: AgentSettings.model(library), overtones: overtones)
         agentSession = session
-        let card = AgentCard(session: session, modelLabel: AgentSettings.model(library).name,
-                             onRun: { [weak self] in self?.runAgent() },
-                             onChooseModel: { [weak self] in self?.showAgentModelSheet() })
+        let card = AgentCard(session: session,
+                             onClose: { [weak self] in self?.closeAgentCard() },
+                             onChooseModel: { [weak self] in self?.showAgentModelSheet() },
+                             onRevealOvertone: { NSWorkspace.shared.activateFileViewerSelecting([$0]) })
         let host = NSHostingView(rootView: card)
         host.sizingOptions = [.intrinsicContentSize]
         host.translatesAutoresizingMaskIntoConstraints = false
@@ -397,28 +409,59 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
             host.centerXAnchor.constraint(equalTo: pageContainer.centerXAnchor),
             host.bottomAnchor.constraint(equalTo: pageContainer.bottomAnchor, constant: -18),
         ])
+        fadeIn(host, duration: 0.18)
         agentHost = host
-        window?.makeFirstResponder(host)
+        agentKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            // NSEvent is not Sendable, so only plain values cross into the main actor.
+            let keyCode = event.keyCode
+            let windowNumber = event.windowNumber
+            let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            let timestamp = event.timestamp
+            let used = MainActor.assumeIsolated {
+                guard let self, windowNumber == self.window?.windowNumber,
+                      timestamp != self.paletteKeyTimestamp else { return false }
+                return self.handleAgentKey(keyCode: keyCode, modifiers: modifiers)
+            }
+            return used ? nil : event
+        }
     }
 
-    /// Opens the card and runs `task`. Used by the `-ChordAgentTask` launch argument.
+    /// The card's keys. The page keeps keyboard focus while the card shows,
+    /// so the keys are read before the page sees them:
+    /// - Escape stops a run in progress, then closes the card.
+    /// - Return allows a step that waits for approval.
+    /// The palette and sheets get their own keys first. Returns true when
+    /// the key was used.
+    private func handleAgentKey(keyCode: UInt16, modifiers: NSEvent.ModifierFlags) -> Bool {
+        guard let session = agentSession, paletteHost == nil, window?.attachedSheet == nil,
+              modifiers.subtracting([.capsLock, .numericPad, .function]).isEmpty else { return false }
+        switch keyCode {
+        case 53: // Escape
+            if session.escape() { closeAgentCard() }
+            return true
+        case 36, 76: // Return, Enter
+            guard case .confirming = session.phase else { return false }
+            session.answer(true)
+            return true
+        default:
+            return false
+        }
+    }
+
+    /// Runs `task`. Used by the `-ChordAgentTask` launch argument.
     func runAgentForTesting(_ task: String) {
-        askChord(nil)
-        agentSession?.task = task
-        runAgent()
-    }
-
-    private func runAgent() {
-        guard let session = agentSession, let webView = shownWebView else { return }
-        session.start(webView: webView, model: AgentSettings.model(library))
+        runPageAction(task)
     }
 
     private func closeAgentCard() {
+        if let monitor = agentKeyMonitor {
+            NSEvent.removeMonitor(monitor)
+            agentKeyMonitor = nil
+        }
         agentSession?.stop()
         agentSession = nil
         agentHost?.removeFromSuperview()
         agentHost = nil
-        if let shownWebView { window?.makeFirstResponder(shownWebView) }
     }
 
     private func showAgentModelSheet() {
@@ -509,11 +552,15 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
     // MARK: Command palette
 
     /// Opens the palette. With `groupID`, new tabs from it open in that group.
-    func showPalette(mode: PaletteMode, initialText: String, groupID: UUID? = nil) {
+    /// With `selectingText` false, typing adds to `initialText` instead of replacing it.
+    func showPalette(mode: PaletteMode, initialText: String, selectingText: Bool = true, groupID: UUID? = nil) {
         dismissPalette()
+        // Page actions need a page, so "$" works only when a tab is active.
+        let pageActions = state.activeTab == nil ? nil : ((try? library.database.recentAgentTasks()) ?? [])
         let model = PaletteModel(
-            mode: mode, initialText: initialText, library: library, tabs: state.visibleTabs,
-            commands: paletteCommands(), bookmarkService: appDelegate?.bookmarking?.service,
+            mode: mode, initialText: initialText, selectingText: selectingText, library: library,
+            tabs: state.visibleTabs, commands: paletteCommands(), bookmarkService: appDelegate?.bookmarking?.service,
+            pageActions: pageActions,
             onPerform: { [weak self] item, mode in self?.perform(item, mode: mode, groupID: groupID) },
             onDismiss: { [weak self] in self?.dismissPalette() })
         let host = NSHostingView(rootView: PaletteView(model: model))
@@ -527,9 +574,14 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
             // NSEvent is not Sendable, so only plain values cross into the main actor.
             let keyCode = event.keyCode
             let windowNumber = event.windowNumber
+            let timestamp = event.timestamp
             let used = MainActor.assumeIsolated {
                 guard let self, windowNumber == self.window?.windowNumber else { return false }
-                return self.handlePaletteKey(keyCode: keyCode)
+                let used = self.handlePaletteKey(keyCode: keyCode)
+                // The page action card's monitor may see the same key next;
+                // the timestamp tells it the palette already used the key.
+                if used { self.paletteKeyTimestamp = timestamp }
+                return used
             }
             return used ? nil : event
         }
@@ -594,6 +646,8 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
             if case .chooseLogin(let host, _) = mode, let webView = shownWebView {
                 fill(login, expectedHost: host, in: webView)
             }
+        case .pageAction(let task, _):
+            runPageAction(task)
         }
     }
 
@@ -668,8 +722,9 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
                                            keywords: ["bookmark", "save"]))
         }
         if state.activeTab != nil {
-            commands.append(PaletteCommand(id: "ask-chord", title: "Ask Chord to Do Something…", symbol: "sparkles",
-                                           keywords: ["agent", "ai", "model", "automate", "action"], shortcut: "⌘J"))
+            commands.append(PaletteCommand(id: "ask-chord", title: "Page Action ($)…", symbol: "sparkles",
+                                           keywords: ["agent", "ai", "model", "automate", "action", "overtone", "ask"],
+                                           shortcut: "⌘J"))
         }
         commands.append(PaletteCommand(id: "agent-model", title: "Model for Page Actions…", symbol: "cpu",
                                        keywords: ["agent", "ai", "ollama", "openai", "apple intelligence"]))

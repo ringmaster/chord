@@ -121,3 +121,72 @@ public enum OvertoneScript {
         return String(decoding: data, as: UTF8.self)
     }
 }
+
+/// Reads and writes the files of one overtone folder, for page actions that
+/// write an overtone for the current page's domain.
+public enum OvertoneFiles {
+    /// The largest file page actions may write.
+    public static let maximumFileBytes = 64 * 1024
+    /// How much of each file the model is shown.
+    public static let maximumPromptCharacters = 4000
+    static let allowedExtensions: Set<String> = ["css", "js", "html"]
+
+    /// Whether `name` is a plain file name that an overtone uses: letters,
+    /// digits, "-", and "_", then one of .css, .js, or .html. A name with a
+    /// slash or a leading "." is refused, so a write cannot leave the folder.
+    public static func isValidName(_ name: String) -> Bool {
+        let parts = name.split(separator: ".", omittingEmptySubsequences: false)
+        guard parts.count == 2, let stem = parts.first, let ext = parts.last,
+              !stem.isEmpty, stem.count <= 64, allowedExtensions.contains(ext.lowercased()) else { return false }
+        return stem.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-" || $0 == "_") }
+    }
+
+    /// The overtone folder for `url`. An existing domain overtone that applies
+    /// to `url` wins, the most specific first. Otherwise it is the site's
+    /// suggested domain, such as "github.com" for "gist.github.com". Nil
+    /// when the URL has no host.
+    public static func folderName(for url: URL, existing: [Overtone]) -> String? {
+        let applying = existing.filter { $0.appliesByDomain(to: url) }
+            .max { ($0.domain?.count ?? 0) < ($1.domain?.count ?? 0) }
+        if let applying { return applying.id }
+        return URLMatcher.suggested(for: url)?.value
+    }
+
+    /// The overtone files in `folder`, in name order. A missing folder has none.
+    public static func read(_ folder: URL) -> [OvertoneContext.File] {
+        let files = (try? FileManager.default.contentsOfDirectory(
+            at: folder, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])) ?? []
+        return files
+            .filter { allowedExtensions.contains($0.pathExtension.lowercased()) }
+            .sorted { $0.lastPathComponent < $1.lastPathComponent }
+            .compactMap { file in
+                (try? String(contentsOf: file, encoding: .utf8)).map { .init(name: file.lastPathComponent, content: $0) }
+            }
+    }
+
+    public enum WriteError: Error, Equatable {
+        case invalidName(String)
+        case tooLarge
+    }
+
+    /// Replaces `name` in `folder` with `content`, and creates the folder when
+    /// needed. Empty `content` deletes the file, and deletes the folder when
+    /// nothing is left in it.
+    public static func write(_ name: String, content: String, in folder: URL) throws {
+        guard isValidName(name) else { throw WriteError.invalidName(name) }
+        guard content.utf8.count <= maximumFileBytes else { throw WriteError.tooLarge }
+        let file = folder.appending(path: name)
+        let manager = FileManager.default
+        if content.isEmpty {
+            if manager.fileExists(atPath: file.path) {
+                try manager.removeItem(at: file)
+            }
+            if let left = try? manager.contentsOfDirectory(atPath: folder.path), left.isEmpty {
+                try? manager.removeItem(at: folder)
+            }
+            return
+        }
+        try manager.createDirectory(at: folder, withIntermediateDirectories: true)
+        try Data(content.utf8).write(to: file, options: .atomic)
+    }
+}

@@ -3,57 +3,74 @@ import SwiftUI
 import WebKit
 import chord_logic
 
-/// The state of a page action in one window: the task text, the steps taken,
-/// a pending approval, and the result.
+/// The state of one page action in a window: the task, the steps taken, a
+/// pending approval, and the result. The palette starts it; the card shows it.
 @MainActor
 @Observable
 final class AgentSession {
+    /// A step that waits for the user's approval.
+    struct Approval: Equatable {
+        var summary: String
+        /// The file text, for an overtone write.
+        var code: String?
+    }
+
     enum Phase: Equatable {
-        case composing
         case running
-        /// An action is waiting for the user's approval.
-        case confirming(String)
+        case confirming(Approval)
         case done(AgentOutcome)
     }
 
-    var task = ""
-    private(set) var phase: Phase = .composing
+    let task: String
+    let modelName: String
+    private(set) var phase: Phase = .running
     private(set) var steps: [AgentStep] = []
-    private(set) var modelName = ""
+    /// True after the user asked the run to stop and before it has.
+    private(set) var stopping = false
+    /// The overtone folder the run wrote to, once it has written a file.
+    private(set) var wroteOvertone: URL?
 
     @ObservationIgnored private var runTask: Task<Void, Never>?
     @ObservationIgnored private var approval: CheckedContinuation<Bool, Never>?
-    @ObservationIgnored let onClose: () -> Void
 
-    init(onClose: @escaping () -> Void) {
-        self.onClose = onClose
-    }
-
-    /// Starts the task on `webView` with `model`.
-    func start(webView: WKWebView, model: any PageAgentModel) {
-        let text = task.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty, runTask == nil else { return }
-        steps = []
-        modelName = model.name
-        phase = .running
-        // The Apple model has a small context, so it gets less page text.
-        let driver = WebPageDriver(webView: webView, maximumText: model is AppleAgentModel ? 1500 : 6000)
+    /// Starts `task` on `webView` with `model`. With `overtones`, the model
+    /// can write the overtone for the page's domain.
+    init(task: String, webView: WKWebView, model: any PageAgentModel, overtones: FolderOvertoneWorkspace?) {
+        self.task = task
+        self.modelName = model.name
+        // The Apple model has a small context, so it gets less of the page.
+        let small = model is AppleAgentModel
+        let driver = WebPageDriver(webView: webView, maximumText: small ? 1500 : 6000, maximumOutline: small ? 1200 : 5000)
         runTask = Task { [weak self] in
             let outcome = await AgentRunner().run(
-                task: text, model: model, driver: driver,
+                task: task, model: model, driver: driver, overtones: overtones,
                 confirm: { [weak self] action, page in
-                    await self?.askApproval(AgentRunner.summarize(action, on: page)) ?? false
+                    await self?.askApproval(action, on: page) ?? false
                 },
-                onStep: { [weak self] step in self?.steps.append(step) })
+                onStep: { [weak self] step in
+                    self?.steps.append(step)
+                    if let overtones, overtones.hasWritten {
+                        self?.wroteOvertone = overtones.folder
+                    }
+                })
             self?.phase = .done(outcome)
             self?.runTask = nil
         }
     }
 
-    private func askApproval(_ summary: String) async -> Bool {
-        phase = .confirming(summary)
+    var isDone: Bool {
+        if case .done = phase { return true }
+        return false
+    }
+
+    private func askApproval(_ action: PageAction, on page: PageSnapshot) async -> Bool {
+        var code: String?
+        if case .writeOvertone(_, let content) = action, !content.isEmpty {
+            code = content
+        }
+        phase = .confirming(Approval(summary: AgentRunner.summarize(action, on: page), code: code))
         let allowed = await withCheckedContinuation { approval = $0 }
-        phase = .running
+        if !isDone { phase = .running }
         return allowed
     }
 
@@ -62,55 +79,56 @@ final class AgentSession {
         approval = nil
     }
 
+    /// Stops the run. A model call in progress is cancelled; the outcome
+    /// arrives when it returns.
     func stop() {
+        guard !isDone else { return }
+        stopping = true
         answer(false)
         runTask?.cancel()
     }
 
-    func reset() {
+    /// What Escape does: stops a run that is still going, and returns true
+    /// when the card should close instead.
+    func escape() -> Bool {
+        if isDone || stopping { return true }
         stop()
-        runTask = nil
-        steps = []
-        phase = .composing
+        return false
     }
 }
 
-/// The card at the bottom of the page for page actions.
+/// The card at the bottom of the page that shows a page action as it runs.
+/// Escape stops the run, then closes the card.
 struct AgentCard: View {
-    @Bindable var session: AgentSession
-    let modelLabel: String
-    let onRun: () -> Void
+    let session: AgentSession
+    let onClose: () -> Void
     let onChooseModel: () -> Void
-    @FocusState private var focused: Bool
+    let onRevealOvertone: (URL) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             header
-            switch session.phase {
-            case .composing:
-                composer
-            case .running, .confirming, .done:
+            if !session.steps.isEmpty || session.phase == .running {
                 stepList
-                footer
             }
+            footer
         }
         .padding(16)
         .frame(width: 560)
         .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
         .shadow(color: .black.opacity(0.22), radius: 24, y: 10)
-        .onAppear { focused = true }
     }
 
     private var header: some View {
         HStack(spacing: 8) {
             Icon("sparkles", size: 16)
                 .foregroundStyle(.tint)
-            Text(session.phase == .composing ? "Ask Chord to do something on this page" : session.task)
+            Text(session.task)
                 .font(.system(size: 13, weight: .semibold))
-                .lineLimit(1)
+                .lineLimit(2)
             Spacer()
             Button(action: onChooseModel) {
-                Text(session.phase == .composing ? modelLabel : session.modelName)
+                Text(session.modelName)
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 8)
@@ -119,33 +137,13 @@ struct AgentCard: View {
             }
             .buttonStyle(ChromeButtonStyle(shape: .capsule))
             .help("Choose the model for page actions")
-            Button {
-                session.stop()
-                session.onClose()
-            } label: {
+            Button(action: onClose) {
                 Icon("x", size: 12).foregroundStyle(.secondary)
                     .frame(width: 20, height: 20).background(Circle().fill(.primary.opacity(0.08)))
             }
             .buttonStyle(ChromeButtonStyle(shape: .circle))
-            .keyboardShortcut(.cancelAction)
+            .help("Close (Escape)")
         }
-    }
-
-    private var composer: some View {
-        HStack(spacing: 10) {
-            TextField("", text: $session.task, prompt: Text("Find the cheapest flight on this page, then open it"), axis: .vertical)
-                .textFieldStyle(.plain)
-                .font(.system(size: 15))
-                .lineLimit(1...4)
-                .focused($focused)
-                .onSubmit(onRun)
-            Button("Run", action: onRun)
-                .buttonStyle(QuietButtonStyle(prominent: true))
-                .disabled(session.task.trimmingCharacters(in: .whitespaces).isEmpty)
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
-        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(.primary.opacity(0.06)))
     }
 
     private var stepList: some View {
@@ -168,7 +166,8 @@ struct AgentCard: View {
                     if session.phase == .running {
                         HStack(spacing: 8) {
                             ProgressView().controlSize(.small)
-                            Text("Working…").font(.system(size: 12)).foregroundStyle(.secondary)
+                            Text(session.stopping ? "Stopping…" : (session.steps.isEmpty ? "Reading the page…" : "Working…"))
+                                .font(.system(size: 12)).foregroundStyle(.secondary)
                         }
                         .id("working")
                     }
@@ -185,31 +184,48 @@ struct AgentCard: View {
 
     @ViewBuilder private var footer: some View {
         switch session.phase {
-        case .confirming(let summary):
-            HStack(spacing: 10) {
-                Icon("hand-stop", size: 17).foregroundStyle(.orange)
-                Text("Allow: \(summary)?").font(.system(size: 13, weight: .semibold)).lineLimit(2)
-                Spacer()
-                Button("Stop") { session.answer(false) }.buttonStyle(QuietButtonStyle())
-                Button("Allow") { session.answer(true) }.buttonStyle(QuietButtonStyle(prominent: true))
-                    .keyboardShortcut(.defaultAction)
+        case .confirming(let approval):
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 10) {
+                    Icon("hand-stop", size: 17).foregroundStyle(.orange)
+                    Text("Allow: \(approval.summary)?").font(.system(size: 13, weight: .semibold)).lineLimit(2)
+                    Spacer()
+                    Button("Stop") { session.stop() }.buttonStyle(QuietButtonStyle())
+                    // The window controller reads Return for Allow, because
+                    // the page keeps keyboard focus while the card shows.
+                    Button("Allow ↩") { session.answer(true) }.buttonStyle(QuietButtonStyle(prominent: true))
+                }
+                if let code = approval.code {
+                    ScrollView(.vertical) {
+                        Text(code)
+                            .font(.system(size: 11, design: .monospaced))
+                            .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(8)
+                    }
+                    .frame(maxHeight: 180)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(.black.opacity(0.08)))
+                }
             }
             .padding(10)
             .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.orange.opacity(0.12)))
         case .running:
             HStack {
                 Spacer()
-                Button("Stop") { session.stop() }.buttonStyle(QuietButtonStyle())
+                KeyHint(text: session.stopping ? "esc to close" : "esc to stop")
+                Button("Stop") { session.stop() }.buttonStyle(QuietButtonStyle()).disabled(session.stopping)
             }
         case .done(let outcome):
             HStack(alignment: .top, spacing: 10) {
                 Icon(icon(for: outcome), size: 17).foregroundStyle(color(for: outcome))
                 Text(message(for: outcome)).font(.system(size: 13)).textSelection(.enabled)
                 Spacer()
-                Button("New Task") { session.reset() }.buttonStyle(QuietButtonStyle())
+                if let folder = session.wroteOvertone {
+                    Button("Show Overtone") { onRevealOvertone(folder) }.buttonStyle(QuietButtonStyle())
+                }
+                KeyHint(text: "esc to close")
             }
-        case .composing:
-            EmptyView()
         }
     }
 
@@ -233,6 +249,20 @@ struct AgentCard: View {
         if case .finished = outcome { return .green }
         if case .failed = outcome { return .orange }
         return .secondary
+    }
+}
+
+/// A small label that names a key and what it does, such as "esc to close".
+private struct KeyHint: View {
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .font(.system(size: 10.5, weight: .medium))
+            .foregroundStyle(.tertiary)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(Capsule().strokeBorder(.primary.opacity(0.12)))
     }
 }
 

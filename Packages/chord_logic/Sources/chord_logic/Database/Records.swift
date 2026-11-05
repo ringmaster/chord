@@ -109,6 +109,27 @@ public struct HistoryEntry: Codable, Equatable, Sendable, FetchableRecord, Mutab
     }
 }
 
+/// A page action task the user ran, offered again when they type "$" in the palette.
+public struct AgentTaskEntry: Codable, Equatable, Sendable, FetchableRecord, MutablePersistableRecord {
+    public static let databaseTableName = "agentTask"
+
+    public var id: Int64?
+    public var text: String
+    public var useCount: Int
+    public var lastUsedAt: Date
+
+    public init(id: Int64? = nil, text: String, useCount: Int, lastUsedAt: Date) {
+        self.id = id
+        self.text = text
+        self.useCount = useCount
+        self.lastUsedAt = lastUsedAt
+    }
+
+    public mutating func didInsert(_ inserted: InsertionSuccess) {
+        id = inserted.rowID
+    }
+}
+
 /// One stored setting. `SettingKey` lists the keys.
 struct SettingRow: Codable, FetchableRecord, PersistableRecord {
     var key: String

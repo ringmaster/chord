@@ -30,6 +30,9 @@ final class PaletteModel {
     @ObservationIgnored private let tabs: [BrowserTab]
     @ObservationIgnored private let commands: [PaletteCommand]
     @ObservationIgnored private let bookmarkService: (any BookmarkService)?
+    /// Previous page action tasks, most recent first, or nil when there is
+    /// no page to act on.
+    @ObservationIgnored private let pageActions: [String]?
     @ObservationIgnored private var bookmarkTask: Task<Void, Never>?
     /// Bookmarks from the service for the current text. They arrive after
     /// the other rows, so the palette never waits on the network.
@@ -37,8 +40,10 @@ final class PaletteModel {
     @ObservationIgnored let onPerform: (PaletteItem, PaletteMode) -> Void
     @ObservationIgnored let onDismiss: () -> Void
 
-    init(mode: PaletteMode, initialText: String, library: Library, tabs: [BrowserTab], commands: [PaletteCommand],
-         bookmarkService: (any BookmarkService)? = nil,
+    /// With `selectingText` false, the insertion point goes after the
+    /// initial text instead of selecting it, so typing adds to it.
+    init(mode: PaletteMode, initialText: String, selectingText: Bool = true, library: Library, tabs: [BrowserTab],
+         commands: [PaletteCommand], bookmarkService: (any BookmarkService)? = nil, pageActions: [String]? = nil,
          onPerform: @escaping (PaletteItem, PaletteMode) -> Void, onDismiss: @escaping () -> Void) {
         self.mode = mode
         self.query = initialText
@@ -46,10 +51,13 @@ final class PaletteModel {
         self.tabs = tabs
         self.commands = commands
         self.bookmarkService = bookmarkService
+        self.pageActions = pageActions
         self.onPerform = onPerform
         self.onDismiss = onDismiss
         if !initialText.isEmpty {
-            selection = TextSelection(range: initialText.startIndex..<initialText.endIndex)
+            selection = selectingText
+                ? TextSelection(range: initialText.startIndex..<initialText.endIndex)
+                : TextSelection(insertionPoint: initialText.endIndex)
         }
         refresh()
     }
@@ -83,7 +91,12 @@ final class PaletteModel {
         }
         let history = (try? library.database.searchHistory(query, limit: PaletteResults.maximumHistory * 2)) ?? []
         items = PaletteResults.build(query: query, tabs: tabs, commands: commands, history: history,
-                                     bookmarks: bookmarks, engine: library.searchEngine)
+                                     bookmarks: bookmarks, pageActions: pageActions, engine: library.searchEngine)
+    }
+
+    /// Whether the text runs a page action, so the field shows that it does.
+    var isPageAction: Bool {
+        pageActions != nil && PaletteResults.pageActionTask(in: query) != nil
     }
 
     /// Asks the bookmark service after a short pause in typing. A failure
@@ -91,7 +104,7 @@ final class PaletteModel {
     private func searchBookmarks() {
         bookmarkTask?.cancel()
         if case .chooseLogin = mode { return }
-        guard let bookmarkService, !query.trimmingCharacters(in: .whitespaces).isEmpty else { return }
+        guard let bookmarkService, !query.trimmingCharacters(in: .whitespaces).isEmpty, !isPageAction else { return }
         let text = query
         bookmarkTask = Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(250))
@@ -144,7 +157,7 @@ struct PaletteView: View {
     private var field: some View {
         HStack(spacing: 12) {
             Icon(fieldSymbol, size: 20)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(model.isPageAction ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
             TextField("", text: $model.query, selection: $model.selection, prompt: Text(fieldPrompt))
                 .textFieldStyle(.plain)
                 .font(.system(size: 19, weight: .regular))
@@ -157,7 +170,8 @@ struct PaletteView: View {
     }
 
     private var fieldSymbol: String {
-        switch model.mode {
+        if model.isPageAction { return "sparkles" }
+        return switch model.mode {
         case .newTab: "square-plus"
         case .currentTab: "search"
         case .chooseLogin: "key"
@@ -167,7 +181,7 @@ struct PaletteView: View {
     private var fieldPrompt: String {
         switch model.mode {
         case .newTab: "Search or enter address"
-        case .currentTab: "Go to address, search, or run a command"
+        case .currentTab: "Go to address, search, run a command, or type $ for a page action"
         case .chooseLogin(let host, _): "Choose a 1Password login for \(host)"
         }
     }
@@ -253,6 +267,8 @@ private struct PaletteRow: View {
             } else {
                 symbol("key")
             }
+        case .pageAction(_, let previous):
+            symbol(previous ? "history" : "sparkles")
         }
     }
 
@@ -274,6 +290,7 @@ private struct PaletteRow: View {
         case .bookmark: ("bookmark-filled", "Bookmark")
         case .command: ("command", "Command")
         case .login: ("key", "Login")
+        case .pageAction: ("sparkles", "Page action")
         }
     }
 
@@ -293,6 +310,7 @@ private struct PaletteRow: View {
         case .bookmark(let bookmark): bookmark.title
         case .command(let command): command.title
         case .login(let login): login.title
+        case .pageAction(let task, _): task
         }
     }
 
@@ -305,6 +323,7 @@ private struct PaletteRow: View {
         case .bookmark(let bookmark): "Karakeep · \(bookmark.url.absoluteString)"
         case .command(let command): command.shortcut
         case .login(let login): [login.username, login.vault].compactMap { $0 }.joined(separator: " · ")
+        case .pageAction(_, let previous): previous ? "Page action you ran before" : "Page action on this page"
         }
     }
 
@@ -317,6 +336,7 @@ private struct PaletteRow: View {
         case .bookmark: "Open ↩"
         case .command: "Run ↩"
         case .login: "Fill ↩"
+        case .pageAction: "Run ↩"
         }
     }
 }
