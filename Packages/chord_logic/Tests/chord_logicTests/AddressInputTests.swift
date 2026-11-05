@@ -16,6 +16,7 @@ struct AddressInputTests {
         "HTTPS://Example.com",
         "file:///Users/someone/page.html",
         "about:blank",
+        "webkit-extension://ecd804b2-d72f-4f21-858e-7f5d233924bd/app/app.html#/page/welcome?language=en",
     ])
     func knownSchemeLoadsAsTyped(text: String) {
         #expect(input.url(for: text)?.absoluteString == text)

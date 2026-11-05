@@ -50,7 +50,8 @@ public struct SearchEngine: Equatable, Sendable, Identifiable {
 /// 4. Text with no spaces and a dot in the host part loads over https.
 /// 5. Anything else goes to the search engine.
 public struct AddressInput: Sendable {
-    public static let knownSchemes: Set<String> = ["http", "https", "file", "about"]
+    /// `webkit-extension` is the scheme of a web extension's own pages, such as its options page.
+    public static let knownSchemes: Set<String> = ["http", "https", "file", "about", "webkit-extension"]
 
     public let searchEngine: SearchEngine
 
