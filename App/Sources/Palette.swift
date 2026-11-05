@@ -115,10 +115,8 @@ struct PaletteView: View {
                 .textFieldStyle(.plain)
                 .font(.system(size: 19, weight: .regular))
                 .focused($fieldFocused)
-                .onSubmit { model.performSelected() }
-                .onKeyPress(.upArrow) { model.moveSelection(by: -1); return .handled }
-                .onKeyPress(.downArrow) { model.moveSelection(by: 1); return .handled }
-                .onKeyPress(.escape) { model.onDismiss(); return .handled }
+                // The window controller handles Return, Escape, and the arrow
+                // keys before the field sees them.
         }
         .padding(.horizontal, 18)
         .frame(height: 56)

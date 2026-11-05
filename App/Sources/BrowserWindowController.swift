@@ -29,6 +29,9 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
     private var sidebar: SidebarView!
 
     private var paletteHost: NSView?
+    private var paletteModel: PaletteModel?
+    /// Watches key presses while the palette is open. See `handlePaletteKey`.
+    private var paletteKeyMonitor: Any?
 
     private var flyout: SidebarFlyout
     private var hideTask: Task<Void, Never>?
@@ -250,13 +253,54 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
         host.autoresizingMask = [.width, .height]
         rootView.addSubview(host)
         paletteHost = host
+        paletteModel = model
+        paletteKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            // NSEvent is not Sendable, so only plain values cross into the main actor.
+            let keyCode = event.keyCode
+            let windowNumber = event.windowNumber
+            let used = MainActor.assumeIsolated {
+                guard let self, windowNumber == self.window?.windowNumber else { return false }
+                return self.handlePaletteKey(keyCode: keyCode)
+            }
+            return used ? nil : event
+        }
         // The web view keeps keyboard focus until another view takes it. The
         // hosting view must become first responder before SwiftUI can focus
         // the palette's text field.
         window?.makeFirstResponder(host)
     }
 
+    /// Handles the palette's keys before the text field sees them. The text
+    /// field's editor uses the up and down arrows to move the insertion
+    /// point, so a SwiftUI key handler on the field never receives them.
+    /// Returns true when the key was used.
+    private func handlePaletteKey(keyCode: UInt16) -> Bool {
+        guard let model = paletteModel else { return false }
+        // While an input method is composing text, its keys go to the field.
+        if let editor = window?.firstResponder as? NSTextView, editor.hasMarkedText() {
+            return false
+        }
+        switch keyCode {
+        case 125: // Down arrow
+            model.moveSelection(by: 1)
+        case 126: // Up arrow
+            model.moveSelection(by: -1)
+        case 36, 76: // Return, Enter
+            model.performSelected()
+        case 53: // Escape
+            dismissPalette()
+        default:
+            return false
+        }
+        return true
+    }
+
     private func dismissPalette() {
+        if let monitor = paletteKeyMonitor {
+            NSEvent.removeMonitor(monitor)
+            paletteKeyMonitor = nil
+        }
+        paletteModel = nil
         guard let host = paletteHost else { return }
         paletteHost = nil
         host.removeFromSuperview()
