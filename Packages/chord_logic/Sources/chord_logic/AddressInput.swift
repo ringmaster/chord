@@ -1,22 +1,37 @@
 import Foundation
 
 /// The search engine that receives text that is not an address.
-public struct SearchEngine: Equatable, Sendable {
+public struct SearchEngine: Equatable, Sendable, Identifiable {
+    /// A stable id that the settings store.
+    public let id: String
     public let name: String
     /// The query is appended to this URL as the value of `queryItemName`.
     public let baseURL: URL
     public let queryItemName: String
 
-    public init(name: String, baseURL: URL, queryItemName: String) {
+    public init(id: String, name: String, baseURL: URL, queryItemName: String) {
+        self.id = id
         self.name = name
         self.baseURL = baseURL
         self.queryItemName = queryItemName
     }
 
     public static let duckDuckGo = SearchEngine(
-        name: "DuckDuckGo",
-        baseURL: URL(string: "https://duckduckgo.com/")!,
-        queryItemName: "q")
+        id: "duckduckgo", name: "DuckDuckGo",
+        baseURL: URL(string: "https://duckduckgo.com/")!, queryItemName: "q")
+
+    /// The engines the user can choose from. The first one is the default.
+    public static let presets: [SearchEngine] = [
+        .duckDuckGo,
+        SearchEngine(id: "kagi", name: "Kagi",
+                     baseURL: URL(string: "https://kagi.com/search")!, queryItemName: "q"),
+        SearchEngine(id: "startpage", name: "Startpage",
+                     baseURL: URL(string: "https://www.startpage.com/do/search")!, queryItemName: "q"),
+        SearchEngine(id: "google", name: "Google",
+                     baseURL: URL(string: "https://www.google.com/search")!, queryItemName: "q"),
+        SearchEngine(id: "bing", name: "Bing",
+                     baseURL: URL(string: "https://www.bing.com/search")!, queryItemName: "q"),
+    ]
 
     /// The search results page for `query`.
     public func searchURL(for query: String) -> URL {

@@ -61,7 +61,7 @@ struct AddressInputTests {
 
     @Test func searchUsesTheGivenEngine() throws {
         let engine = SearchEngine(
-            name: "Test", baseURL: URL(string: "https://search.test/find")!, queryItemName: "term")
+            id: "test", name: "Test", baseURL: URL(string: "https://search.test/find")!, queryItemName: "term")
         let url = try #require(AddressInput(searchEngine: engine).url(for: "a & b"))
         #expect(url.absoluteString == "https://search.test/find?term=a%20%26%20b")
     }
