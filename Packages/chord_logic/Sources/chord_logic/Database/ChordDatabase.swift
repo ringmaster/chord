@@ -11,6 +11,12 @@ public enum SettingKey: String, Sendable {
     case sidebarPinned
     /// The address of the Karakeep server. Its API key is in the Keychain.
     case karakeepServer
+    /// "apple" or "openai": the model for page actions.
+    case agentProvider
+    /// The base URL of the OpenAI-compatible server for page actions.
+    case agentBaseURL
+    /// The model name on that server.
+    case agentModel
 }
 
 /// Chord's database: profiles, spaces, tabs, settings, and history.

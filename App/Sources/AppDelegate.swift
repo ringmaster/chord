@@ -79,6 +79,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 first?.toggleDeveloperTools(nil)
             }
         }
+        // `--args -ChordAskChord YES` opens the page actions card, for screenshots.
+        if UserDefaults.standard.bool(forKey: "ChordAskChord") {
+            first?.askChord(nil)
+        }
+        // `--args -ChordAgentTask "text"` opens the card and runs that task
+        // after the page loads, for testing against a stub model.
+        if let task = UserDefaults.standard.string(forKey: "ChordAgentTask") {
+            Task {
+                try? await Task.sleep(for: .seconds(3))
+                first?.runAgentForTesting(task)
+            }
+        }
         // `--args -ChordShowExtensions YES` opens the Extensions window, for screenshots.
         if UserDefaults.standard.bool(forKey: "ChordShowExtensions") {
             showExtensions(nil)
@@ -379,6 +391,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                                               action: #selector(BrowserWindowController.toggleDeveloperTools(_:)),
                                               keyEquivalent: "i")
         developerTools.keyEquivalentModifierMask = [.command, .option]
+        viewMenu.addItem(withTitle: "Ask Chord…", action: #selector(BrowserWindowController.askChord(_:)),
+                         keyEquivalent: "j")
         mainMenu.addItem(submenu(viewMenu))
 
         let historyMenu = NSMenu(title: "History")

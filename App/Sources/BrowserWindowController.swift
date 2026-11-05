@@ -292,6 +292,66 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
     }
 
     private var toastHost: NSView?
+    private var agentHost: NSView?
+    private var agentSession: AgentSession?
+
+    /// Shows the page actions card at the bottom of the page.
+    @objc func askChord(_ sender: Any?) {
+        guard agentHost == nil else {
+            window?.makeFirstResponder(agentHost)
+            return
+        }
+        let session = AgentSession { [weak self] in self?.closeAgentCard() }
+        agentSession = session
+        let card = AgentCard(session: session, modelLabel: AgentSettings.model(library).name,
+                             onRun: { [weak self] in self?.runAgent() },
+                             onChooseModel: { [weak self] in self?.showAgentModelSheet() })
+        let host = NSHostingView(rootView: card)
+        host.sizingOptions = [.intrinsicContentSize]
+        host.translatesAutoresizingMaskIntoConstraints = false
+        rootView.addSubview(host)
+        NSLayoutConstraint.activate([
+            host.centerXAnchor.constraint(equalTo: pageContainer.centerXAnchor),
+            host.bottomAnchor.constraint(equalTo: pageContainer.bottomAnchor, constant: -18),
+        ])
+        agentHost = host
+        window?.makeFirstResponder(host)
+    }
+
+    /// Opens the card and runs `task`. Used by the `-ChordAgentTask` launch argument.
+    func runAgentForTesting(_ task: String) {
+        askChord(nil)
+        agentSession?.task = task
+        runAgent()
+    }
+
+    private func runAgent() {
+        guard let session = agentSession, let webView = shownWebView else { return }
+        session.start(webView: webView, model: AgentSettings.model(library))
+    }
+
+    private func closeAgentCard() {
+        agentSession?.stop()
+        agentSession = nil
+        agentHost?.removeFromSuperview()
+        agentHost = nil
+        if let shownWebView { window?.makeFirstResponder(shownWebView) }
+    }
+
+    private func showAgentModelSheet() {
+        guard let window else { return }
+        let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 460, height: 10),
+                            styleMask: [.titled, .fullSizeContentView], backing: .buffered, defer: false)
+        panel.titlebarAppearsTransparent = true
+        panel.titleVisibility = .hidden
+        let host = NSHostingView(rootView: AgentModelSheet(library: library) { [weak window, weak panel] in
+            if let panel { window?.endSheet(panel) }
+        })
+        host.sizingOptions = [.preferredContentSize]
+        panel.contentView = host
+        panel.setContentSize(NSSize(width: 460, height: 420))
+        window.beginSheet(panel)
+    }
 
     /// Shows a short message at the bottom of the window for two seconds.
     func showToast(_ text: String, symbol: String) {
@@ -493,6 +553,12 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
             commands.append(PaletteCommand(id: "karakeep-connect", title: "Connect Karakeep…", symbol: "bookmark.circle",
                                            keywords: ["bookmark", "save"]))
         }
+        if state.activeTab != nil {
+            commands.append(PaletteCommand(id: "ask-chord", title: "Ask Chord to Do Something…", symbol: "sparkles",
+                                           keywords: ["agent", "ai", "model", "automate", "action"], shortcut: "⌘J"))
+        }
+        commands.append(PaletteCommand(id: "agent-model", title: "Model for Page Actions…", symbol: "cpu",
+                                       keywords: ["agent", "ai", "ollama", "openai", "apple intelligence"]))
         commands.append(PaletteCommand(id: "developer-tools", title: "Developer Tools", symbol: "hammer",
                                        keywords: ["inspector", "inspect", "console", "devtools"], shortcut: "⌥⌘I"))
         commands.append(PaletteCommand(id: "extensions", title: "Extensions", symbol: "puzzlepiece.extension",
@@ -535,6 +601,8 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
         case "new-window": appDelegate?.newWindow(nil)
         case "extensions": appDelegate?.showExtensions(nil)
         case "developer-tools": toggleDeveloperTools(nil)
+        case "ask-chord": askChord(nil)
+        case "agent-model": showAgentModelSheet()
         case "karakeep-save": saveBookmark(nil)
         case "karakeep-connect": showKarakeepConnect()
         case "overtones-folder": appDelegate?.overtones?.revealFolder()
