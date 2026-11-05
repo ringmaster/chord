@@ -154,4 +154,25 @@ struct PaletteResultsTests {
         let historyCount = items.filter { if case .history = $0 { true } else { false } }.count
         #expect(historyCount == PaletteResults.maximumHistory)
     }
+
+    @Test func bookmarksComeLastWithoutPagesAlreadyListed() {
+        let open = tab("https://github.com", "GitHub")
+        let visited = entry("https://github.com/x", "X")
+        let bookmarks = [
+            ServiceBookmark(id: "1", url: URL(string: "https://github.com")!, title: "Open already"),
+            ServiceBookmark(id: "2", url: URL(string: "https://github.com/x")!, title: "In history"),
+            ServiceBookmark(id: "3", url: URL(string: "https://github.blog")!, title: "New"),
+        ]
+        let items = PaletteResults.build(query: "github", tabs: [open], commands: [], history: [visited],
+                                         bookmarks: bookmarks, engine: engine)
+        #expect(items.last == .bookmark(bookmarks[2]))
+        #expect(items.filter { if case .bookmark = $0 { true } else { false } }.count == 1)
+    }
+
+    @Test func bookmarksAreLimited() {
+        let bookmarks = (0..<10).map { ServiceBookmark(id: "\($0)", url: URL(string: "https://b\($0).example")!, title: "B") }
+        let items = PaletteResults.build(query: "b", tabs: [], commands: [], history: [], bookmarks: bookmarks,
+                                         engine: engine)
+        #expect(items.filter { if case .bookmark = $0 { true } else { false } }.count == PaletteResults.maximumBookmarks)
+    }
 }

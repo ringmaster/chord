@@ -31,6 +31,8 @@ public enum PaletteItem: Equatable, Sendable {
     case tab(BrowserTab)
     /// Load a page from history.
     case history(HistoryEntry)
+    /// Load a page from the bookmark service.
+    case bookmark(ServiceBookmark)
     case command(PaletteCommand)
 }
 
@@ -80,18 +82,21 @@ public enum PaletteResults {
     public static let maximumTabs = 4
     public static let maximumCommands = 4
     public static let maximumHistory = 6
+    public static let maximumBookmarks = 4
 
     /// The rows, in this order:
     /// 1. one primary row: the typed address, or a search,
     /// 2. open tabs that match,
     /// 3. commands that match,
-    /// 4. history that matches, without pages already open in a tab.
+    /// 4. history that matches, without pages already open in a tab,
+    /// 5. bookmarks from the bookmark service, without pages already listed.
     ///
     /// With nothing typed, the rows are the most recent tabs, then the commands.
     /// When the query matches a command's title from its start, commands come
     /// before tabs, so typing "tog" puts "Toggle Sidebar" near the top.
     public static func build(query: String, tabs: [BrowserTab], commands: [PaletteCommand],
-                             history: [HistoryEntry], engine: SearchEngine) -> [PaletteItem] {
+                             history: [HistoryEntry], bookmarks: [ServiceBookmark] = [],
+                             engine: SearchEngine) -> [PaletteItem] {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty {
             let recent = tabs.sorted { ($0.lastActivatedAt ?? .distantPast) > ($1.lastActivatedAt ?? .distantPast) }
@@ -137,6 +142,13 @@ public enum PaletteResults {
         } else {
             items += matchingTabs + commandRows
         }
-        return items + historyRows
+        let listedURLs = openURLs.union(historyRows.compactMap { item in
+            if case .history(let entry) = item { return entry.url } else { return nil }
+        })
+        let bookmarkRows = bookmarks
+            .filter { !listedURLs.contains($0.url) }
+            .prefix(maximumBookmarks)
+            .map(PaletteItem.bookmark)
+        return items + historyRows + bookmarkRows
     }
 }

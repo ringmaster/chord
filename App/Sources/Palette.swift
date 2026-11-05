@@ -26,16 +26,23 @@ final class PaletteModel {
     @ObservationIgnored private let library: Library
     @ObservationIgnored private let tabs: [BrowserTab]
     @ObservationIgnored private let commands: [PaletteCommand]
+    @ObservationIgnored private let bookmarkService: (any BookmarkService)?
+    @ObservationIgnored private var bookmarkTask: Task<Void, Never>?
+    /// Bookmarks from the service for the current text. They arrive after
+    /// the other rows, so the palette never waits on the network.
+    private var bookmarks: [ServiceBookmark] = []
     @ObservationIgnored let onPerform: (PaletteItem, PaletteMode) -> Void
     @ObservationIgnored let onDismiss: () -> Void
 
     init(mode: PaletteMode, initialText: String, library: Library, tabs: [BrowserTab], commands: [PaletteCommand],
+         bookmarkService: (any BookmarkService)? = nil,
          onPerform: @escaping (PaletteItem, PaletteMode) -> Void, onDismiss: @escaping () -> Void) {
         self.mode = mode
         self.query = initialText
         self.library = library
         self.tabs = tabs
         self.commands = commands
+        self.bookmarkService = bookmarkService
         self.onPerform = onPerform
         self.onDismiss = onDismiss
         if !initialText.isEmpty {
@@ -60,10 +67,32 @@ final class PaletteModel {
     }
 
     private func refresh() {
-        let history = (try? library.database.searchHistory(query, limit: PaletteResults.maximumHistory * 2)) ?? []
-        items = PaletteResults.build(query: query, tabs: tabs, commands: commands,
-                                     history: history, engine: library.searchEngine)
+        bookmarks = []
+        rebuild()
         selectedIndex = 0
+        searchBookmarks()
+    }
+
+    private func rebuild() {
+        let history = (try? library.database.searchHistory(query, limit: PaletteResults.maximumHistory * 2)) ?? []
+        items = PaletteResults.build(query: query, tabs: tabs, commands: commands, history: history,
+                                     bookmarks: bookmarks, engine: library.searchEngine)
+    }
+
+    /// Asks the bookmark service after a short pause in typing. A failure
+    /// leaves the other rows as they are.
+    private func searchBookmarks() {
+        bookmarkTask?.cancel()
+        guard let bookmarkService, !query.trimmingCharacters(in: .whitespaces).isEmpty else { return }
+        let text = query
+        bookmarkTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(250))
+            guard !Task.isCancelled,
+                  let found = try? await bookmarkService.search(text, limit: PaletteResults.maximumBookmarks * 2),
+                  !Task.isCancelled, let self, self.query == text else { return }
+            self.bookmarks = found
+            self.rebuild()
+        }
     }
 }
 
@@ -190,6 +219,14 @@ private struct PaletteRow: View {
             SiteIcon(url: tab.url, size: 18)
         case .history(let entry):
             SiteIcon(url: entry.url, size: 18)
+        case .bookmark(let bookmark):
+            SiteIcon(url: bookmark.url, size: 18)
+                .overlay(alignment: .bottomTrailing) {
+                    Image(systemName: "bookmark.fill")
+                        .font(.system(size: 7, weight: .bold))
+                        .foregroundStyle(.tint)
+                        .offset(x: 3, y: 3)
+                }
         case .command(let command):
             symbol(command.symbol)
         }
@@ -209,6 +246,7 @@ private struct PaletteRow: View {
         case .search(let query, _, _): query
         case .tab(let tab): tab.title.isEmpty ? (tab.url.host() ?? tab.url.absoluteString) : tab.title
         case .history(let entry): entry.title.isEmpty ? (entry.url.host() ?? entry.url.absoluteString) : entry.title
+        case .bookmark(let bookmark): bookmark.title
         case .command(let command): command.title
         }
     }
@@ -219,6 +257,7 @@ private struct PaletteRow: View {
         case .search(_, let engine, _): "Search \(engine.name)"
         case .tab(let tab): tab.url.absoluteString
         case .history(let entry): entry.url.absoluteString
+        case .bookmark(let bookmark): "Karakeep · \(bookmark.url.absoluteString)"
         case .command(let command): command.shortcut
         }
     }
@@ -229,6 +268,7 @@ private struct PaletteRow: View {
         case .search: "Search ↩"
         case .tab: "Switch to Tab ↩"
         case .history: "Open ↩"
+        case .bookmark: "Open ↩"
         case .command: "Run ↩"
         }
     }

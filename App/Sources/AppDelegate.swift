@@ -13,6 +13,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var sessions: TabSessions?
     private(set) var overtones: OvertoneManager?
     private(set) var extensions: ExtensionManager?
+    private(set) var bookmarking: Bookmarking?
     private var extensionsWindow: ExtensionsWindowController?
     private var windows: [BrowserWindowController] = []
     private var minorWindows: [MinorChordWindowController] = []
@@ -40,6 +41,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 .map { URL(filePath: $0) } ?? OvertoneManager.defaultFolder()
             let overtones = OvertoneManager(folder: overtonesFolder)
             self.overtones = overtones
+            bookmarking = Bookmarking(library: library)
             let extensions = ExtensionManager(database: database)
             self.extensions = extensions
             sessions = TabSessions(library: library, overtoneManager: overtones,
@@ -340,6 +342,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                          keyEquivalent: "t")
         fileMenu.addItem(withTitle: "Open Location…", action: #selector(BrowserWindowController.openPalette(_:)),
                          keyEquivalent: "l")
+        fileMenu.addItem(withTitle: "Save to Karakeep", action: #selector(BrowserWindowController.saveBookmark(_:)),
+                         keyEquivalent: "d")
         fileMenu.addItem(.separator())
         fileMenu.addItem(withTitle: "Close Tab", action: #selector(BrowserWindowController.closeTab(_:)),
                          keyEquivalent: "w")

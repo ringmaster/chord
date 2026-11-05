@@ -9,6 +9,8 @@ public enum SettingKey: String, Sendable {
     case activeSpaceID
     /// "1" when the sidebar is pinned open beside the page, "0" when it is a flyout.
     case sidebarPinned
+    /// The address of the Karakeep server. Its API key is in the Keychain.
+    case karakeepServer
 }
 
 /// Chord's database: profiles, spaces, tabs, settings, and history.

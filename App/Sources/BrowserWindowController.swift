@@ -256,6 +256,60 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
         (NSApp.delegate as? AppDelegate)?.extensions?.performAction(id, for: tab, anchor: (sidebar, anchor))
     }
 
+    /// Command-D: saves the active tab's page to Karakeep. Without a
+    /// connection, it opens the sheet that makes one.
+    @objc func saveBookmark(_ sender: Any?) {
+        guard let service = appDelegate?.bookmarking?.service else {
+            showKarakeepConnect()
+            return
+        }
+        guard let tab = state.activeTab else { return }
+        Task {
+            do {
+                _ = try await service.save(url: tab.url, title: tab.title)
+                showToast("Saved to Karakeep", symbol: "bookmark.fill")
+            } catch BookmarkServiceError.unauthorized {
+                showToast("Karakeep refused the API key", symbol: "exclamationmark.triangle.fill")
+            } catch {
+                showToast("Could not save to Karakeep", symbol: "exclamationmark.triangle.fill")
+            }
+        }
+    }
+
+    private func showKarakeepConnect() {
+        guard let bookmarking = appDelegate?.bookmarking, let window else { return }
+        let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 460, height: 10),
+                            styleMask: [.titled, .fullSizeContentView], backing: .buffered, defer: false)
+        panel.titlebarAppearsTransparent = true
+        panel.titleVisibility = .hidden
+        let view = KarakeepConnectView(bookmarking: bookmarking) { [weak window, weak panel] in
+            if let panel { window?.endSheet(panel) }
+        }
+        let host = NSHostingView(rootView: view)
+        panel.contentView = host
+        panel.setContentSize(host.fittingSize)
+        window.beginSheet(panel)
+    }
+
+    private var toastHost: NSView?
+
+    /// Shows a short message at the bottom of the window for two seconds.
+    func showToast(_ text: String, symbol: String) {
+        toastHost?.removeFromSuperview()
+        let host = NSHostingView(rootView: ToastView(text: text, symbol: symbol))
+        host.frame = pageContainer.frame
+        host.autoresizingMask = [.width, .height]
+        rootView.addSubview(host)
+        toastHost = host
+        Task { [weak self, weak host] in
+            try? await Task.sleep(for: .seconds(2))
+            guard let host, self?.toastHost === host else { return }
+            NSAnimationContext.runAnimationGroup { $0.duration = 0.25; host.animator().alphaValue = 0 } completionHandler: {
+                MainActor.assumeIsolated { host.removeFromSuperview() }
+            }
+        }
+    }
+
     @objc func closeTab(_ sender: Any?) {
         guard let id = state.activeTabID else { return }
         state.close(id)
@@ -286,7 +340,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
         dismissPalette()
         let model = PaletteModel(
             mode: mode, initialText: initialText, library: library, tabs: state.visibleTabs,
-            commands: paletteCommands(),
+            commands: paletteCommands(), bookmarkService: appDelegate?.bookmarking?.service,
             onPerform: { [weak self] item, mode in self?.perform(item, mode: mode, groupID: groupID) },
             onDismiss: { [weak self] in self?.dismissPalette() })
         let host = NSHostingView(rootView: PaletteView(model: model))
@@ -356,6 +410,8 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
             load(url, mode: mode, groupID: groupID)
         case .history(let entry):
             load(entry.url, mode: mode, groupID: groupID)
+        case .bookmark(let bookmark):
+            load(bookmark.url, mode: mode, groupID: groupID)
         case .tab(let tab):
             state.activate(tab.id)
         case .command(let command):
@@ -418,6 +474,17 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
             commands.append(PaletteCommand(id: "route-site", title: "Route This Site…",
                                            symbol: "arrow.triangle.branch", keywords: ["rule"]))
         }
+        if appDelegate?.bookmarking?.isConnected == true {
+            if state.activeTab != nil {
+                commands.append(PaletteCommand(id: "karakeep-save", title: "Save to Karakeep", symbol: "bookmark",
+                                               keywords: ["bookmark", "save"], shortcut: "⌘D"))
+            }
+            commands.append(PaletteCommand(id: "karakeep-connect", title: "Karakeep Connection…",
+                                           symbol: "bookmark.circle", keywords: ["bookmark"]))
+        } else {
+            commands.append(PaletteCommand(id: "karakeep-connect", title: "Connect Karakeep…", symbol: "bookmark.circle",
+                                           keywords: ["bookmark", "save"]))
+        }
         commands.append(PaletteCommand(id: "extensions", title: "Extensions", symbol: "puzzlepiece.extension",
                                        keywords: ["plugin", "add-on", "1password"], shortcut: "⇧⌘E"))
         commands.append(PaletteCommand(id: "overtones-folder", title: "Open Overtones Folder", symbol: "folder",
@@ -457,6 +524,8 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
         case "new-tab": newTab(nil)
         case "new-window": appDelegate?.newWindow(nil)
         case "extensions": appDelegate?.showExtensions(nil)
+        case "karakeep-save": saveBookmark(nil)
+        case "karakeep-connect": showKarakeepConnect()
         case "overtones-folder": appDelegate?.overtones?.revealFolder()
         case "overtones-reload": appDelegate?.overtones?.reload()
         case "group":
