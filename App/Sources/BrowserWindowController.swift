@@ -75,7 +75,9 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
         sidebar = SidebarView(content: SidebarContent(
             state: state,
             onOpenPalette: { [weak self] in self?.openPalette(nil) },
-            onNewTab: { [weak self] in self?.newTab(nil) }))
+            onNewTab: { [weak self] in self?.newTab(nil) },
+            extensions: (NSApp.delegate as? AppDelegate)?.extensions,
+            onExtensionAction: { [weak self] id in self?.performExtensionAction(id) }))
         headerStrip = NSHostingView(rootView: HeaderStrip(
             state: state,
             onNewTab: { [weak self] groupID in self?.showPalette(mode: .newTab, initialText: "", groupID: groupID) }))
@@ -185,8 +187,13 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
             showElsewhereCard(true)
             return
         }
+        let previous = shownWebView.flatMap { shown in state.visibleTabs.lazy
+            .compactMap { self.sessions.liveSession(for: $0.id) }.first { $0.webView === shown } }
         sessions.claim(tabID: tab.id, by: me, state: state)
         showElsewhereCard(false)
+        if let session = sessions.liveSession(for: tab.id), session !== previous {
+            sessions.extensionController.didActivateTab(session, previousActiveTab: previous)
+        }
         guard webView.superview !== pageContainer else {
             shownWebView = webView
             return
@@ -239,6 +246,14 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
     @objc func openPalette(_ sender: Any?) {
         let address = state.activeTab?.url.absoluteString ?? ""
         showPalette(mode: state.activeTab == nil ? .newTab : .currentTab, initialText: address)
+    }
+
+    /// Runs an extension's toolbar action for the active tab. Its popup
+    /// opens beside the bottom of the sidebar, where the buttons are.
+    private func performExtensionAction(_ id: UUID) {
+        let tab = state.activeTabID.flatMap { sessions.liveSession(for: $0) }
+        let anchor = NSRect(x: sidebar.bounds.minX + 20, y: sidebar.bounds.minY + 56, width: 1, height: 1)
+        (NSApp.delegate as? AppDelegate)?.extensions?.performAction(id, for: tab, anchor: (sidebar, anchor))
     }
 
     @objc func closeTab(_ sender: Any?) {
@@ -403,6 +418,8 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
             commands.append(PaletteCommand(id: "route-site", title: "Route This Site…",
                                            symbol: "arrow.triangle.branch", keywords: ["rule"]))
         }
+        commands.append(PaletteCommand(id: "extensions", title: "Extensions", symbol: "puzzlepiece.extension",
+                                       keywords: ["plugin", "add-on", "1password"], shortcut: "⇧⌘E"))
         commands.append(PaletteCommand(id: "overtones-folder", title: "Open Overtones Folder", symbol: "folder",
                                        keywords: ["overtone", "css", "javascript"]))
         commands.append(PaletteCommand(id: "overtones-reload", title: "Reload Overtones", symbol: "arrow.triangle.2.circlepath",
@@ -439,6 +456,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
         switch commandID {
         case "new-tab": newTab(nil)
         case "new-window": appDelegate?.newWindow(nil)
+        case "extensions": appDelegate?.showExtensions(nil)
         case "overtones-folder": appDelegate?.overtones?.revealFolder()
         case "overtones-reload": appDelegate?.overtones?.reload()
         case "group":
@@ -567,6 +585,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
 
     func windowDidBecomeKey(_ notification: Notification) {
         placeWindowButtons()
+        sessions.extensionController.didFocusWindow(self)
         // Take back the active tab's page if another window showed it.
         showActiveTab()
     }
@@ -579,6 +598,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
         hideTask?.cancel()
         removeShownWebView()
         sessions.release(window: ObjectIdentifier(self))
+        sessions.extensionController.didCloseWindow(self)
         onClose?()
     }
 }

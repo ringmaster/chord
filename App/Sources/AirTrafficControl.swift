@@ -731,8 +731,8 @@ private struct ChoiceRow: View {
     }
 }
 
-/// A small round switch: filled when the rule is on.
-private struct EnabledSwitch: View {
+/// A small round switch: filled when on. Used instead of the stock switch.
+struct EnabledSwitch: View {
     let isOn: Bool
     let onChange: (Bool) -> Void
 

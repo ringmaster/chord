@@ -134,6 +134,19 @@ public final class ChordDatabase: Sendable {
                 """)
         }
 
+        migrator.registerMigration("v5-web-extensions") { db in
+            try db.create(table: "webExtension") { t in
+                t.primaryKey("id", .blob)
+                t.column("source", .text).notNull()
+                t.column("path", .text).notNull().unique()
+                t.column("name", .text).notNull()
+                t.column("enabled", .boolean).notNull()
+                t.column("grantedPermissions", .text).notNull()
+                t.column("grantedMatchPatterns", .text).notNull()
+                t.column("addedAt", .datetime).notNull()
+            }
+        }
+
         return migrator
     }
 

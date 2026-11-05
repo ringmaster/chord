@@ -11,8 +11,8 @@ import chord_logic
 final class TabSession: NSObject, WKNavigationDelegate, WKUIDelegate {
     let tabID: UUID
     let webView: WKWebView
-    private weak var library: Library?
-    private weak var sessions: TabSessions?
+    private(set) weak var library: Library?
+    private(set) weak var sessions: TabSessions?
     private var observations: [NSKeyValueObservation] = []
     private var overtones: OvertoneBinding?
 
@@ -48,6 +48,7 @@ final class TabSession: NSObject, WKNavigationDelegate, WKUIDelegate {
     private func reportPage() {
         guard let url = webView.url, let library else { return }
         library.pageChanged(tabID: tabID, url: url, title: webView.title ?? "")
+        sessions?.extensionController.didChangeTabProperties([.title, .URL], for: self)
     }
 
     private func titleChanged() {
@@ -134,6 +135,8 @@ final class TabSession: NSObject, WKNavigationDelegate, WKUIDelegate {
 final class TabSessions {
     @ObservationIgnored private let library: Library
     @ObservationIgnored let overtoneManager: OvertoneManager
+    /// Every web view shares this controller, so extensions reach every page.
+    @ObservationIgnored let extensionController: WKWebExtensionController
     @ObservationIgnored private var sessions: [UUID: TabSession] = [:]
     @ObservationIgnored private var dataStores: [UUID: WKWebsiteDataStore] = [:]
     /// The window that shows each tab's web view, by tab id.
@@ -144,9 +147,15 @@ final class TabSessions {
         weak var state: WindowState?
     }
 
-    init(library: Library, overtoneManager: OvertoneManager) {
+    init(library: Library, overtoneManager: OvertoneManager, extensionController: WKWebExtensionController) {
         self.library = library
         self.overtoneManager = overtoneManager
+        self.extensionController = extensionController
+    }
+
+    /// The session for a tab, if its web view exists.
+    func liveSession(for tabID: UUID) -> TabSession? {
+        sessions[tabID]
     }
 
     /// The session for `tab`. A new session loads the tab's address.
@@ -164,6 +173,7 @@ final class TabSessions {
         let session = TabSession(tabID: tabID, configuration: configuration, library: library, sessions: self,
                                  overtoneManager: overtoneManager)
         sessions[tabID] = session
+        extensionController.didOpenTab(session)
         return session
     }
 
@@ -199,6 +209,7 @@ final class TabSessions {
                 session.webView.removeFromSuperview()
                 sessions[id] = nil
                 hosts[id] = nil
+                extensionController.didCloseTab(session, windowIsClosing: false)
             }
         }
     }
@@ -208,6 +219,7 @@ final class TabSessions {
     func configuration(forProfile profileID: UUID) -> WKWebViewConfiguration {
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = dataStore(forProfile: profileID)
+        configuration.webExtensionController = extensionController
         return configuration
     }
 

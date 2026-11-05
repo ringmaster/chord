@@ -141,6 +141,7 @@ final class MinorChordWindowController: NSWindowController, NSWindowDelegate, WK
     }
 
     private func pageChanged() {
+        webView.configuration.webExtensionController?.didChangeTabProperties([.title, .URL], for: self)
         bar.host = webView.url?.host() ?? ""
         window?.title = webView.title?.isEmpty == false ? webView.title! : bar.host
     }
@@ -224,6 +225,8 @@ final class MinorChordWindowController: NSWindowController, NSWindowDelegate, WK
 
     func windowWillClose(_ notification: Notification) {
         hideBarTask?.cancel()
+        webView.configuration.webExtensionController?.didCloseTab(self, windowIsClosing: true)
+        webView.configuration.webExtensionController?.didCloseWindow(self)
         webView.stopLoading()
         onClose?()
     }

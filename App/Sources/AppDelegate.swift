@@ -12,6 +12,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var library: Library?
     private var sessions: TabSessions?
     private(set) var overtones: OvertoneManager?
+    private(set) var extensions: ExtensionManager?
+    private var extensionsWindow: ExtensionsWindowController?
     private var windows: [BrowserWindowController] = []
     private var minorWindows: [MinorChordWindowController] = []
     private var airTrafficControl: AirTrafficControlWindowController?
@@ -38,7 +40,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 .map { URL(filePath: $0) } ?? OvertoneManager.defaultFolder()
             let overtones = OvertoneManager(folder: overtonesFolder)
             self.overtones = overtones
-            sessions = TabSessions(library: library, overtoneManager: overtones)
+            let extensions = ExtensionManager(database: database)
+            self.extensions = extensions
+            sessions = TabSessions(library: library, overtoneManager: overtones,
+                                   extensionController: extensions.controller)
         } catch {
             AppDelegate.log.fault("Could not open the database: \(error.localizedDescription, privacy: .public)")
             let alert = NSAlert(error: error)
@@ -64,6 +69,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // so screenshots can show it without key presses.
         if let query = UserDefaults.standard.string(forKey: "ChordPaletteQuery") {
             first?.showPalette(mode: .newTab, initialText: query)
+        }
+        // `--args -ChordShowExtensions YES` opens the Extensions window, for screenshots.
+        if UserDefaults.standard.bool(forKey: "ChordShowExtensions") {
+            showExtensions(nil)
         }
         // `--args -ChordShowAirTrafficControl https://example.com` opens Air
         // Traffic Control testing that link, for screenshots.
@@ -171,7 +180,52 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         minorWindows.append(controller)
         controller.showWindow(nil)
+        sessions.extensionController.didOpenWindow(controller)
+        sessions.extensionController.didOpenTab(controller)
         return controller
+    }
+
+    // MARK: Web extensions
+
+    /// Every Chord window, as web extensions see them.
+    func extensionWindows() -> [any WKWebExtensionWindow] {
+        let ordered = NSApp.orderedWindows
+        let majors: [any WKWebExtensionWindow] = windows.sorted { a, b in
+            (ordered.firstIndex { $0 === a.window } ?? .max) < (ordered.firstIndex { $0 === b.window } ?? .max)
+        }
+        return majors + minorWindows
+    }
+
+    /// Opens a tab an extension asked for, in the front Major Chord window.
+    func openTabForExtension(_ url: URL, activate: Bool) -> (any WKWebExtensionTab)? {
+        guard let major = frontWindow(), let sessions else { return nil }
+        let previous = major.state.activeTabID
+        guard let tab = major.state.openTab(url) else { return nil }
+        if !activate, let previous {
+            major.state.activate(previous)
+        }
+        return sessions.session(for: tab)
+    }
+
+    /// Opens a Major Chord window an extension asked for, with its tabs.
+    func openWindowForExtension(urls: [URL]) -> (any WKWebExtensionWindow)? {
+        guard let window = makeWindow() else { return nil }
+        for url in urls {
+            window.state.openTab(url)
+        }
+        if urls.isEmpty {
+            window.newTab(nil)
+        }
+        return window
+    }
+
+    @objc func showExtensions(_ sender: Any?) {
+        guard let extensions else { return }
+        if extensionsWindow == nil {
+            extensionsWindow = ExtensionsWindowController(manager: extensions)
+        }
+        extensionsWindow?.showWindow(nil)
+        extensionsWindow?.window?.makeKeyAndOrderFront(nil)
     }
 
     /// The Major Chord window whose state is `state`.
@@ -240,6 +294,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         windows.append(controller)
         controller.showWindow(nil)
+        sessions.extensionController.didOpenWindow(controller)
         return controller
     }
 
@@ -273,6 +328,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         appMenu.addItem(.separator())
         appMenu.addItem(withTitle: "Air Traffic Control…", action: #selector(showAirTrafficControl(_:)),
                         keyEquivalent: ",")
+        appMenu.addItem(withTitle: "Extensions…", action: #selector(showExtensions(_:)), keyEquivalent: "E")
         appMenu.addItem(.separator())
         appMenu.addItem(withTitle: "Hide Chord", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
         appMenu.addItem(withTitle: "Quit Chord", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")

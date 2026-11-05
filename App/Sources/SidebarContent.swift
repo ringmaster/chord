@@ -13,6 +13,8 @@ struct SidebarContent: View {
     let state: WindowState
     var onOpenPalette: () -> Void
     var onNewTab: () -> Void
+    var extensions: ExtensionManager?
+    var onExtensionAction: (UUID) -> Void = { _ in }
 
     var body: some View {
         ZStack {
@@ -48,6 +50,11 @@ struct SidebarContent: View {
                 .scrollIndicators(.never)
 
                 Spacer(minLength: 0)
+
+                if let extensions {
+                    ExtensionActions(manager: extensions, onAction: onExtensionAction)
+                        .padding(.horizontal, Design.Sidebar.contentPadding - 6)
+                }
 
                 SpaceSwitcher(state: state)
                     .padding(.horizontal, Design.Sidebar.contentPadding - 4)
@@ -367,5 +374,67 @@ private struct SpaceDot: View {
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
         .help(space.name)
+    }
+}
+
+// MARK: Extension buttons
+
+/// A row of buttons, one for each loaded extension with a toolbar action.
+/// Clicking one runs the extension's action for the window's active tab.
+private struct ExtensionActions: View {
+    let manager: ExtensionManager
+    let onAction: (UUID) -> Void
+
+    var body: some View {
+        let entries = manager.loaded.values
+            .filter { $0.webExtension.displayActionLabel != nil || $0.webExtension.actionIcon(for: NSSize(width: 16, height: 16)) != nil }
+            .sorted { ($0.webExtension.displayName ?? "") < ($1.webExtension.displayName ?? "") }
+        if !entries.isEmpty {
+            HStack(spacing: 4) {
+                ForEach(entries) { entry in
+                    ExtensionButton(entry: entry) { onAction(entry.id) }
+                }
+                Spacer(minLength: 0)
+            }
+        }
+    }
+}
+
+private struct ExtensionButton: View {
+    let entry: ExtensionManager.Loaded
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        let webExtension = entry.webExtension
+        let contextAction = entry.context.action(for: nil)
+        Button(action: action) {
+            Group {
+                if let image = contextAction?.icon(for: NSSize(width: 16, height: 16))
+                    ?? webExtension.actionIcon(for: NSSize(width: 16, height: 16)) {
+                    Image(nsImage: image).resizable().frame(width: 16, height: 16)
+                } else {
+                    Image(systemName: "puzzlepiece.extension").font(.system(size: 13))
+                }
+            }
+            .frame(width: 28, height: 28)
+            .background(RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .fill(.primary.opacity(hovering ? 0.10 : 0)))
+            .overlay(alignment: .topTrailing) {
+                if let badge = contextAction?.badgeText, !badge.isEmpty {
+                    Text(badge)
+                        .font(.system(size: 8, weight: .bold))
+                        .padding(.horizontal, 3)
+                        .frame(minWidth: 12, minHeight: 12)
+                        .background(Capsule().fill(Color.red))
+                        .foregroundStyle(.white)
+                        .offset(x: 3, y: -3)
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .help(contextAction?.label ?? webExtension.displayActionLabel ?? webExtension.displayName ?? "Extension")
     }
 }
