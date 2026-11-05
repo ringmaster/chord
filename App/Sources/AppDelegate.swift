@@ -45,6 +45,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         } else if library?.activeTab == nil {
             mainWindow?.newTab(nil)
         }
+        // `--args -ChordPaletteQuery text` opens the palette with that text,
+        // so screenshots can show it without key presses.
+        if let query = UserDefaults.standard.string(forKey: "ChordPaletteQuery") {
+            mainWindow?.showPalette(mode: .newTab, initialText: query)
+        }
         NSApp.activate()
     }
 
@@ -115,6 +120,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         editMenu.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
         editMenu.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
         editMenu.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        editMenu.addItem(withTitle: "Copy Address", action: #selector(BrowserWindowController.copyAddress(_:)),
+                         keyEquivalent: "C")
         editMenu.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
         mainMenu.addItem(submenu(editMenu))
 

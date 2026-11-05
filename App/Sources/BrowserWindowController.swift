@@ -25,6 +25,8 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
     private let edgeHotZone = EdgeHotZoneView()
     private var sidebar: SidebarView!
 
+    private var paletteHost: NSView?
+
     private var flyout: SidebarFlyout
     private var hideTask: Task<Void, Never>?
     private weak var shownWebView: WKWebView?
@@ -145,8 +147,15 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
 
     // MARK: Actions
 
+    /// Command-T: the palette, to open a new tab.
     @objc func newTab(_ sender: Any?) {
-        library.openTab(library.searchEngine.baseURL)
+        showPalette(mode: .newTab, initialText: "")
+    }
+
+    /// Command-L: the palette, filled with the active tab's address.
+    @objc func openPalette(_ sender: Any?) {
+        let address = library.activeTab?.url.absoluteString ?? ""
+        showPalette(mode: library.activeTab == nil ? .newTab : .currentTab, initialText: address)
     }
 
     @objc func closeTab(_ sender: Any?) {
@@ -154,9 +163,10 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
         library.close(id)
     }
 
-    @objc func openPalette(_ sender: Any?) {
-        // The command palette replaces this in the next task.
-        newTab(sender)
+    @objc func copyAddress(_ sender: Any?) {
+        guard let url = library.activeTab?.url else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(url.absoluteString, forType: .string)
     }
 
     @objc func reloadPage(_ sender: Any?) {
@@ -169,6 +179,125 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
 
     @objc func goForward(_ sender: Any?) {
         shownWebView?.goForward()
+    }
+
+    // MARK: Command palette
+
+    func showPalette(mode: PaletteMode, initialText: String) {
+        dismissPalette()
+        let model = PaletteModel(
+            mode: mode, initialText: initialText, library: library, commands: paletteCommands(),
+            onPerform: { [weak self] item, mode in self?.perform(item, mode: mode) },
+            onDismiss: { [weak self] in self?.dismissPalette() })
+        let host = NSHostingView(rootView: PaletteView(model: model))
+        host.frame = rootView.bounds
+        host.autoresizingMask = [.width, .height]
+        rootView.addSubview(host)
+        paletteHost = host
+    }
+
+    private func dismissPalette() {
+        guard let host = paletteHost else { return }
+        paletteHost = nil
+        host.removeFromSuperview()
+        if let shownWebView {
+            window?.makeFirstResponder(shownWebView)
+        }
+    }
+
+    private func perform(_ item: PaletteItem, mode: PaletteMode) {
+        switch item {
+        case .navigate(let url), .search(_, _, let url):
+            load(url, mode: mode)
+        case .history(let entry):
+            load(entry.url, mode: mode)
+        case .tab(let tab):
+            library.activate(tab.id)
+        case .command(let command):
+            run(command.id)
+        }
+    }
+
+    private func load(_ url: URL, mode: PaletteMode) {
+        if mode == .currentTab, let shownWebView {
+            shownWebView.load(URLRequest(url: url))
+        } else {
+            library.openTab(url)
+        }
+    }
+
+    /// The commands that make sense right now. Run them with `run(_:)`.
+    private func paletteCommands() -> [PaletteCommand] {
+        var commands = [
+            PaletteCommand(id: "new-tab", title: "New Tab", symbol: "plus", shortcut: "⌘T"),
+            PaletteCommand(id: "toggle-sidebar", title: "Toggle Sidebar", symbol: "sidebar.left", shortcut: "⌘S"),
+            PaletteCommand(id: "reload", title: "Reload Page", symbol: "arrow.clockwise",
+                           keywords: ["refresh"], shortcut: "⌘R"),
+            PaletteCommand(id: "back", title: "Go Back", symbol: "chevron.left", shortcut: "⌘["),
+            PaletteCommand(id: "forward", title: "Go Forward", symbol: "chevron.right", shortcut: "⌘]"),
+            PaletteCommand(id: "copy-address", title: "Copy Address", symbol: "link",
+                           keywords: ["url"], shortcut: "⇧⌘C"),
+            PaletteCommand(id: "close-tab", title: "Close Tab", symbol: "xmark", shortcut: "⌘W"),
+        ]
+        if let tab = library.activeTab {
+            switch tab.section {
+            case .open:
+                commands.append(PaletteCommand(id: "pin-tab", title: "Pin Tab", symbol: "pin"))
+                commands.append(PaletteCommand(id: "favorite-tab", title: "Add to Favorites", symbol: "star"))
+            case .pinned:
+                commands.append(PaletteCommand(id: "unpin-tab", title: "Unpin Tab", symbol: "pin.slash"))
+                commands.append(PaletteCommand(id: "favorite-tab", title: "Add to Favorites", symbol: "star"))
+            case .favorite:
+                commands.append(PaletteCommand(id: "unfavorite-tab", title: "Remove from Favorites",
+                                               symbol: "star.slash"))
+            }
+        }
+        commands.append(PaletteCommand(id: "new-space", title: "New Space", symbol: "square.stack"))
+        for space in library.spaces where space.id != library.activeSpace.id {
+            commands.append(PaletteCommand(id: "space:\(space.id.uuidString)", title: "Switch to \(space.name)",
+                                           symbol: "square.stack", keywords: ["space"]))
+        }
+        for engine in SearchEngine.presets where engine != library.searchEngine {
+            commands.append(PaletteCommand(id: "engine:\(engine.id)", title: "Search with \(engine.name)",
+                                           symbol: "magnifyingglass", keywords: ["search engine", "default"]))
+        }
+        if !DefaultBrowser.isDefault {
+            commands.append(PaletteCommand(id: "default-browser", title: "Make Chord the Default Browser",
+                                           symbol: "globe", keywords: ["default"]))
+        }
+        commands.append(PaletteCommand(id: "clear-history", title: "Clear History", symbol: "trash"))
+        return commands
+    }
+
+    private func run(_ commandID: String) {
+        if commandID.hasPrefix("space:"), let id = UUID(uuidString: String(commandID.dropFirst(6))) {
+            library.selectSpace(id)
+            return
+        }
+        if commandID.hasPrefix("engine:") {
+            let id = String(commandID.dropFirst(7))
+            if let engine = SearchEngine.presets.first(where: { $0.id == id }) {
+                library.setSearchEngine(engine)
+            }
+            return
+        }
+        switch commandID {
+        case "new-tab": newTab(nil)
+        case "toggle-sidebar": toggleSidebar(nil)
+        case "reload": reloadPage(nil)
+        case "back": goBack(nil)
+        case "forward": goForward(nil)
+        case "copy-address": copyAddress(nil)
+        case "close-tab": closeTab(nil)
+        case "pin-tab": library.activeTabID.map { library.move($0, to: .pinned) }
+        case "unpin-tab": library.activeTabID.map { library.move($0, to: .open) }
+        case "favorite-tab": library.activeTabID.map { library.move($0, to: .favorite) }
+        case "unfavorite-tab": library.activeTabID.map { library.move($0, to: .pinned) }
+        case "new-space": library.createSpace(named: "Space \(library.spaces.count + 1)")
+        case "default-browser": DefaultBrowser.request()
+        case "clear-history": library.clearHistory()
+        default: AppDelegate.log.error("Unknown palette command \(commandID, privacy: .public)")
+        }
     }
 
     // MARK: Sidebar flyout

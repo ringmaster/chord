@@ -129,6 +129,12 @@ final class Library {
         }
     }
 
+    func clearHistory() {
+        attempt("clear history") {
+            try database.clearHistory()
+        }
+    }
+
     // MARK: Settings
 
     func setSearchEngine(_ engine: SearchEngine) {

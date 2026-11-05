@@ -58,7 +58,21 @@ public struct AddressInput: Sendable {
         self.searchEngine = searchEngine
     }
 
-    public func url(for text: String) -> URL? {
+    /// What typed text resolves to.
+    public enum Resolution: Equatable, Sendable {
+        /// The text is an address.
+        case address(URL)
+        /// The text goes to the search engine at this results URL.
+        case search(URL)
+
+        public var url: URL {
+            switch self {
+            case .address(let url), .search(let url): url
+            }
+        }
+    }
+
+    public func resolve(_ text: String) -> Resolution? {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty {
             return nil
@@ -67,21 +81,26 @@ public struct AddressInput: Sendable {
         if let url = URL(string: trimmed),
            let scheme = url.scheme?.lowercased(),
            AddressInput.knownSchemes.contains(scheme) {
-            return url
+            return .address(url)
         }
 
         if !trimmed.contains(where: \.isWhitespace) {
             let host = AddressInput.hostPart(of: trimmed)
-            if host.lowercased() == "localhost" {
-                return URL(string: "http://" + trimmed)
+            if host.lowercased() == "localhost", let url = URL(string: "http://" + trimmed) {
+                return .address(url)
             }
             if host.contains("."), !host.hasPrefix("."), !host.hasSuffix("."),
                let url = URL(string: "https://" + trimmed), url.host != nil {
-                return url
+                return .address(url)
             }
         }
 
-        return searchEngine.searchURL(for: trimmed)
+        return .search(searchEngine.searchURL(for: trimmed))
+    }
+
+    /// The URL to load for typed text, or nil for empty text.
+    public func url(for text: String) -> URL? {
+        resolve(text)?.url
     }
 
     /// The text before the first `/`, `?`, or `#`, without a port.

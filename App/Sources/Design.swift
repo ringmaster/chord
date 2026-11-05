@@ -16,6 +16,14 @@ enum Design {
         static let hideDelay: Duration = .milliseconds(350)
     }
 
+    enum Palette {
+        static let width: CGFloat = 640
+        static let cornerRadius: CGFloat = 18
+        /// The gap between the top of the window and the palette card.
+        static let topOffset: CGFloat = 90
+        static let maximumResultsHeight: CGFloat = 430
+    }
+
     enum Page {
         /// The corner radius of the page when it sits beside the pinned sidebar.
         static let cornerRadius: CGFloat = 10
