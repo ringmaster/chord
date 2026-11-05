@@ -11,6 +11,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private var library: Library?
     private var sessions: TabSessions?
+    private(set) var overtones: OvertoneManager?
     private var windows: [BrowserWindowController] = []
     private var minorWindows: [MinorChordWindowController] = []
     private var airTrafficControl: AirTrafficControlWindowController?
@@ -31,7 +32,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let database = try ChordDatabase(url: databaseURL)
             let library = try Library(database: database)
             self.library = library
-            sessions = TabSessions(library: library)
+            // `--args -ChordOvertonesPath /some/folder` reads overtones from
+            // another folder, for testing.
+            let overtonesFolder = UserDefaults.standard.string(forKey: "ChordOvertonesPath")
+                .map { URL(filePath: $0) } ?? OvertoneManager.defaultFolder()
+            let overtones = OvertoneManager(folder: overtonesFolder)
+            self.overtones = overtones
+            sessions = TabSessions(library: library, overtoneManager: overtones)
         } catch {
             AppDelegate.log.fault("Could not open the database: \(error.localizedDescription, privacy: .public)")
             let alert = NSAlert(error: error)
@@ -153,7 +160,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let library, let sessions else { return nil }
         let controller = MinorChordWindowController(
             url: url, profileID: profileID, library: library,
-            configuration: configuration ?? sessions.configuration(forProfile: profileID))
+            configuration: configuration ?? sessions.configuration(forProfile: profileID),
+            overtoneManager: sessions.overtoneManager)
         controller.onClose = { [weak self, weak controller] in
             self?.minorWindows.removeAll { $0 === controller }
         }
@@ -243,9 +251,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Shows the Air Traffic Control window. With a page URL, the window tests
     /// it and adds a rule for its site, routed to `spaceID`, when none routes it.
     func showAirTrafficControl(routing pageURL: URL?, spaceID: UUID?) {
-        guard let library else { return }
+        guard let library, let overtones else { return }
         if airTrafficControl == nil {
-            airTrafficControl = AirTrafficControlWindowController(library: library)
+            airTrafficControl = AirTrafficControlWindowController(library: library, overtones: overtones)
         }
         airTrafficControl?.show(routing: pageURL, spaceID: spaceID ?? library.lastSpaceID)
     }

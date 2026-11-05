@@ -25,15 +25,19 @@ final class MinorChordWindowController: NSWindowController, NSWindowDelegate, WK
     private var hoverZone: HoverZoneView!
     private var hideBarTask: Task<Void, Never>?
     private var observations: [NSKeyValueObservation] = []
+    private var overtones: OvertoneBinding?
 
     private var appDelegate: AppDelegate? { NSApp.delegate as? AppDelegate }
 
     /// Opens a window for `url`. With `configuration`, the window adopts a web
     /// view configuration that WebKit gave for a new window, which keeps the
     /// link between a popup and the page that opened it.
-    init(url: URL?, profileID: UUID, library: Library, configuration: WKWebViewConfiguration) {
+    init(url: URL?, profileID: UUID, library: Library, configuration: WKWebViewConfiguration,
+         overtoneManager: OvertoneManager) {
         self.profileID = profileID
         self.library = library
+        // Each web view gets its own script list for its overtones.
+        configuration.userContentController = WKUserContentController()
         webView = WKWebView(frame: .zero, configuration: configuration)
 
         let window = NSWindow(
@@ -56,6 +60,7 @@ final class MinorChordWindowController: NSWindowController, NSWindowDelegate, WK
         webView.isInspectable = true
         webView.navigationDelegate = self
         webView.uiDelegate = self
+        overtones = OvertoneBinding(webView: webView, manager: overtoneManager, library: library)
 
         buildViews()
         setBarVisible(false, animated: false)
@@ -188,6 +193,9 @@ final class MinorChordWindowController: NSWindowController, NSWindowDelegate, WK
                                          window: nil) == true {
             decisionHandler(.cancel)
             return
+        }
+        if navigationAction.targetFrame?.isMainFrame == true, let url = navigationAction.request.url {
+            overtones?.prepare(for: url)
         }
         decisionHandler(.allow)
     }

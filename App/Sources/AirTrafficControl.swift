@@ -12,8 +12,8 @@ import chord_logic
 final class AirTrafficControlWindowController: NSWindowController, NSWindowDelegate {
     let model: AirTrafficControlModel
 
-    init(library: Library) {
-        model = AirTrafficControlModel(library: library)
+    init(library: Library, overtones: OvertoneManager) {
+        model = AirTrafficControlModel(library: library, overtones: overtones)
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 780, height: 680),
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
@@ -67,6 +67,7 @@ final class AirTrafficControlWindowController: NSWindowController, NSWindowDeleg
 @Observable
 final class AirTrafficControlModel {
     let library: Library
+    let overtones: OvertoneManager
     var testText = ""
     /// The rule that was just added, so its card can scroll into view and glow.
     var highlightedRuleID: UUID?
@@ -74,8 +75,9 @@ final class AirTrafficControlModel {
     /// Air Traffic Control.
     var newRuleSpaceID: UUID?
 
-    init(library: Library) {
+    init(library: Library, overtones: OvertoneManager) {
         self.library = library
+        self.overtones = overtones
     }
 
     /// The URL in the test field, read the way the palette reads an address.
@@ -333,7 +335,7 @@ private struct RuleCard: View {
                 library.updateRule(updated)
             }
 
-            FlowSentence(rule: rule, library: library)
+            FlowSentence(rule: rule, model: model)
                 .opacity(rule.enabled ? 1 : 0.45)
                 .layoutPriority(-1)
 
@@ -403,7 +405,8 @@ private struct RuleCard: View {
 /// [on any path] open in [Work space]".
 private struct FlowSentence: View {
     let rule: Rule
-    let library: Library
+    let model: AirTrafficControlModel
+    private var library: Library { model.library }
 
     var body: some View {
         FlowLayout(spacing: 6, lineSpacing: 6) {
@@ -415,6 +418,7 @@ private struct FlowSentence: View {
             }
             Word("open in")
             RoutePill(rule: rule, library: library)
+            OvertonesPill(rule: rule, model: model)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -938,5 +942,73 @@ private struct GroupCard: View {
 
     private var spaceName: String {
         library.spaces.first { $0.id == group.spaceID }?.name ?? "a missing space"
+    }
+}
+
+// MARK: Overtones
+
+/// "with no overtones", or the names of the overtones a rule adds, chosen in a
+/// popover. Overtones named after a domain apply on their own, so the popover
+/// lists them only when the rule already names one.
+private struct OvertonesPill: View {
+    let rule: Rule
+    let model: AirTrafficControlModel
+    @State private var open = false
+
+    private var choices: [String] {
+        let ruleOnly = model.overtones.overtones.filter { $0.domain == nil }.map(\.id)
+        return ruleOnly + rule.actions.overtones.filter { !ruleOnly.contains($0) }
+    }
+
+    var body: some View {
+        ChoicePill(title: title, open: $open) {
+            ChoiceList {
+                ChoiceHeading("Overtones")
+                if choices.isEmpty {
+                    Text("Add a folder to the overtones folder to make one.")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                        .padding(10)
+                }
+                ForEach(choices, id: \.self) { id in
+                    let known = model.overtones.overtones.contains { $0.id == id }
+                    ChoiceRow(title: id, detail: known ? detail(for: id) : "Missing from the overtones folder",
+                              symbol: "wand.and.sparkles", selected: rule.actions.overtones.contains(id)) {
+                        toggle(id)
+                    }
+                }
+                Divider().padding(.vertical, 4)
+                ChoiceRow(title: "Open Overtones Folder", detail: "Each folder there is one overtone",
+                          symbol: "folder", selected: false) {
+                    open = false
+                    model.overtones.revealFolder()
+                }
+            }
+        }
+    }
+
+    private var title: String {
+        switch rule.actions.overtones.count {
+        case 0: "with no overtones"
+        case 1: "with \(rule.actions.overtones[0])"
+        default: "with \(rule.actions.overtones.count) overtones"
+        }
+    }
+
+    private func detail(for id: String) -> String {
+        guard let overtone = model.overtones.overtones.first(where: { $0.id == id }) else { return "" }
+        let parts = [(overtone.styles.count, "CSS"), (overtone.scripts.count, "JS"), (overtone.html.count, "HTML")]
+            .filter { $0.0 > 0 }.map { "\($0.0) \($0.1)" }
+        return parts.isEmpty ? "No files yet" : parts.joined(separator: " · ")
+    }
+
+    private func toggle(_ id: String) {
+        var updated = rule
+        if let index = updated.actions.overtones.firstIndex(of: id) {
+            updated.actions.overtones.remove(at: index)
+        } else {
+            updated.actions.overtones.append(id)
+        }
+        model.library.updateRule(updated)
     }
 }

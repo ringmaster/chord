@@ -14,13 +14,20 @@ final class TabSession: NSObject, WKNavigationDelegate, WKUIDelegate {
     private weak var library: Library?
     private weak var sessions: TabSessions?
     private var observations: [NSKeyValueObservation] = []
+    private var overtones: OvertoneBinding?
 
-    init(tabID: UUID, configuration: WKWebViewConfiguration, library: Library, sessions: TabSessions) {
+    init(tabID: UUID, configuration: WKWebViewConfiguration, library: Library, sessions: TabSessions,
+         overtoneManager: OvertoneManager) {
         self.tabID = tabID
         self.library = library
         self.sessions = sessions
+        // Each web view gets its own script list, so one page's overtones
+        // never reach another page. A popup's configuration can share its
+        // opener's list otherwise.
+        configuration.userContentController = WKUserContentController()
         webView = WKWebView(frame: .zero, configuration: configuration)
         super.init()
+        overtones = OvertoneBinding(webView: webView, manager: overtoneManager, library: library)
         webView.allowsBackForwardNavigationGestures = true
         webView.allowsMagnification = true
         // Web Inspector opens from Safari's Develop menu for now. A docked
@@ -81,9 +88,14 @@ final class TabSession: NSObject, WKNavigationDelegate, WKUIDelegate {
     /// Redirects, form submissions, and script navigation always load in place.
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,
                  decisionHandler: @escaping @MainActor (WKNavigationActionPolicy) -> Void) {
-        if navigationAction.targetFrame?.isMainFrame == true, routeClickedLink(navigationAction) {
-            decisionHandler(.cancel)
-            return
+        if navigationAction.targetFrame?.isMainFrame == true {
+            if routeClickedLink(navigationAction) {
+                decisionHandler(.cancel)
+                return
+            }
+            if let url = navigationAction.request.url {
+                overtones?.prepare(for: url)
+            }
         }
         decisionHandler(.allow)
     }
@@ -121,6 +133,7 @@ final class TabSession: NSObject, WKNavigationDelegate, WKUIDelegate {
 @Observable
 final class TabSessions {
     @ObservationIgnored private let library: Library
+    @ObservationIgnored let overtoneManager: OvertoneManager
     @ObservationIgnored private var sessions: [UUID: TabSession] = [:]
     @ObservationIgnored private var dataStores: [UUID: WKWebsiteDataStore] = [:]
     /// The window that shows each tab's web view, by tab id.
@@ -131,8 +144,9 @@ final class TabSessions {
         weak var state: WindowState?
     }
 
-    init(library: Library) {
+    init(library: Library, overtoneManager: OvertoneManager) {
         self.library = library
+        self.overtoneManager = overtoneManager
     }
 
     /// The session for `tab`. A new session loads the tab's address.
@@ -147,7 +161,8 @@ final class TabSessions {
 
     /// Makes a session from a configuration WebKit gave for a new window.
     func adopt(tabID: UUID, configuration: WKWebViewConfiguration) -> TabSession {
-        let session = TabSession(tabID: tabID, configuration: configuration, library: library, sessions: self)
+        let session = TabSession(tabID: tabID, configuration: configuration, library: library, sessions: self,
+                                 overtoneManager: overtoneManager)
         sessions[tabID] = session
         return session
     }

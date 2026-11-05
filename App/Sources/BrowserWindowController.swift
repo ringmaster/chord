@@ -403,6 +403,10 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
             commands.append(PaletteCommand(id: "route-site", title: "Route This Site…",
                                            symbol: "arrow.triangle.branch", keywords: ["rule"]))
         }
+        commands.append(PaletteCommand(id: "overtones-folder", title: "Open Overtones Folder", symbol: "folder",
+                                       keywords: ["overtone", "css", "javascript"]))
+        commands.append(PaletteCommand(id: "overtones-reload", title: "Reload Overtones", symbol: "arrow.triangle.2.circlepath",
+                                       keywords: ["overtone"]))
         commands.append(PaletteCommand(id: "new-space", title: "New Space", symbol: "square.stack"))
         for space in library.spaces where space.id != state.spaceID {
             commands.append(PaletteCommand(id: "space:\(space.id.uuidString)", title: "Switch to \(space.name)",
@@ -435,6 +439,8 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
         switch commandID {
         case "new-tab": newTab(nil)
         case "new-window": appDelegate?.newWindow(nil)
+        case "overtones-folder": appDelegate?.overtones?.revealFolder()
+        case "overtones-reload": appDelegate?.overtones?.reload()
         case "group":
             if let tab = state.activeTab, let matcher = URLMatcher.suggested(for: tab.url) {
                 library.makeGroup(tab.id, matcher: matcher)
