@@ -154,6 +154,7 @@ final class MinorChordWindowController: NSWindowController, NSWindowDelegate, WK
     }
 
     @objc func reloadPage(_ sender: Any?) { webView.reload() }
+    @objc func toggleDeveloperTools(_ sender: Any?) { WebInspector.toggle(webView) }
     @objc func goBack(_ sender: Any?) { webView.goBack() }
     @objc func goForward(_ sender: Any?) { webView.goForward() }
 

@@ -72,6 +72,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let query = UserDefaults.standard.string(forKey: "ChordPaletteQuery") {
             first?.showPalette(mode: .newTab, initialText: query)
         }
+        // `--args -ChordShowDeveloperTools YES` docks Web Inspector at launch, for screenshots.
+        if UserDefaults.standard.bool(forKey: "ChordShowDeveloperTools") {
+            Task {
+                try? await Task.sleep(for: .seconds(2))
+                first?.toggleDeveloperTools(nil)
+            }
+        }
         // `--args -ChordShowExtensions YES` opens the Extensions window, for screenshots.
         if UserDefaults.standard.bool(forKey: "ChordShowExtensions") {
             showExtensions(nil)
@@ -368,6 +375,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                          keyEquivalent: "s")
         viewMenu.addItem(withTitle: "Reload Page", action: #selector(BrowserWindowController.reloadPage(_:)),
                          keyEquivalent: "r")
+        let developerTools = viewMenu.addItem(withTitle: "Developer Tools",
+                                              action: #selector(BrowserWindowController.toggleDeveloperTools(_:)),
+                                              keyEquivalent: "i")
+        developerTools.keyEquivalentModifierMask = [.command, .option]
         mainMenu.addItem(submenu(viewMenu))
 
         let historyMenu = NSMenu(title: "History")

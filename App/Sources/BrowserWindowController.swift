@@ -136,8 +136,8 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
         pageContainer.layer?.maskedCorners = showsHeaderStrip
             ? [.layerMinXMinYCorner, .layerMaxXMinYCorner]
             : [.layerMinXMinYCorner, .layerMaxXMinYCorner, .layerMinXMaxYCorner, .layerMaxXMaxYCorner]
-        shownWebView?.frame = pageContainer.bounds
-        elsewhereView?.frame = pageContainer.bounds
+        // The web view follows the page area through its autoresizing mask.
+        // Setting its frame here would cover a docked Web Inspector.
 
         let strip = Design.Edge.dragStripHeight
         dragStrip.frame = NSRect(x: pageFrame.minX, y: bounds.height - strip,
@@ -321,6 +321,14 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
         NSPasteboard.general.setString(url.absoluteString, forType: .string)
     }
 
+    /// Option-Command-I: docks Web Inspector in the page area, or closes it.
+    @objc func toggleDeveloperTools(_ sender: Any?) {
+        guard let shownWebView else { return }
+        if !WebInspector.toggle(shownWebView) {
+            showToast("Use Safari's Develop menu to inspect this page", symbol: "hammer")
+        }
+    }
+
     @objc func reloadPage(_ sender: Any?) {
         shownWebView?.reload()
     }
@@ -485,6 +493,8 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
             commands.append(PaletteCommand(id: "karakeep-connect", title: "Connect Karakeep…", symbol: "bookmark.circle",
                                            keywords: ["bookmark", "save"]))
         }
+        commands.append(PaletteCommand(id: "developer-tools", title: "Developer Tools", symbol: "hammer",
+                                       keywords: ["inspector", "inspect", "console", "devtools"], shortcut: "⌥⌘I"))
         commands.append(PaletteCommand(id: "extensions", title: "Extensions", symbol: "puzzlepiece.extension",
                                        keywords: ["plugin", "add-on", "1password"], shortcut: "⇧⌘E"))
         commands.append(PaletteCommand(id: "overtones-folder", title: "Open Overtones Folder", symbol: "folder",
@@ -524,6 +534,7 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
         case "new-tab": newTab(nil)
         case "new-window": appDelegate?.newWindow(nil)
         case "extensions": appDelegate?.showExtensions(nil)
+        case "developer-tools": toggleDeveloperTools(nil)
         case "karakeep-save": saveBookmark(nil)
         case "karakeep-connect": showKarakeepConnect()
         case "overtones-folder": appDelegate?.overtones?.revealFolder()
