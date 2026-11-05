@@ -96,6 +96,9 @@ struct PaletteView: View {
         }
         .onAppear {
             fieldFocused = true
+            // The hosting view becomes first responder after this view
+            // appears, so focus is set again on the next turn of the run loop.
+            Task { @MainActor in fieldFocused = true }
             withAnimation(.spring(duration: 0.22, bounce: 0.15)) { appeared = true }
         }
     }

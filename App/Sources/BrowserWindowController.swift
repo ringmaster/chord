@@ -194,6 +194,10 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
         host.autoresizingMask = [.width, .height]
         rootView.addSubview(host)
         paletteHost = host
+        // The web view keeps keyboard focus until another view takes it. The
+        // hosting view must become first responder before SwiftUI can focus
+        // the palette's text field.
+        window?.makeFirstResponder(host)
     }
 
     private func dismissPalette() {
@@ -221,8 +225,8 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
     private func load(_ url: URL, mode: PaletteMode) {
         if mode == .currentTab, let shownWebView {
             shownWebView.load(URLRequest(url: url))
-        } else if let delegate = NSApp.delegate as? AppDelegate {
-            delegate.route(url)
+        } else if let appDelegate {
+            appDelegate.route(url)
         } else {
             library.openTab(url)
         }
@@ -253,6 +257,13 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
                 commands.append(PaletteCommand(id: "unfavorite-tab", title: "Remove from Favorites",
                                                symbol: "star.slash"))
             }
+        }
+        commands.append(PaletteCommand(id: "air-traffic-control", title: "Air Traffic Control",
+                                       symbol: "point.3.filled.connected.trianglepath.dotted",
+                                       keywords: ["rules", "routing", "route"], shortcut: "⌘,"))
+        if library.activeTab != nil {
+            commands.append(PaletteCommand(id: "route-site", title: "Route This Site…",
+                                           symbol: "arrow.triangle.branch", keywords: ["rule"]))
         }
         commands.append(PaletteCommand(id: "new-space", title: "New Space", symbol: "square.stack"))
         for space in library.spaces where space.id != library.activeSpace.id {
@@ -298,8 +309,14 @@ final class BrowserWindowController: NSWindowController, NSWindowDelegate {
         case "new-space": library.createSpace(named: "Space \(library.spaces.count + 1)")
         case "default-browser": DefaultBrowser.request()
         case "clear-history": library.clearHistory()
+        case "air-traffic-control": appDelegate?.showAirTrafficControl(routing: nil)
+        case "route-site": appDelegate?.showAirTrafficControl(routing: library.activeTab?.url)
         default: AppDelegate.log.error("Unknown palette command \(commandID, privacy: .public)")
         }
+    }
+
+    private var appDelegate: AppDelegate? {
+        NSApp.delegate as? AppDelegate
     }
 
     // MARK: Sidebar flyout

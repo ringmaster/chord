@@ -94,6 +94,25 @@ struct URLMatcherTests {
     }
 }
 
+struct SuggestedMatcherTests {
+    @Test(arguments: [
+        ("https://app.datadoghq.com/x", "datadoghq.com"),
+        ("https://datadoghq.com", "datadoghq.com"),
+        ("https://www.github.com", "github.com"),
+        ("https://news.bbc.co.uk/a", "bbc.co.uk"),
+        ("https://a.b.example.io", "example.io"),
+        ("http://localhost:3000", "localhost"),
+    ])
+    func suggestsTheSiteDomain(address: String, expected: String) {
+        let matcher = URLMatcher.suggested(for: URL(string: address)!)
+        #expect(matcher == URLMatcher(scope: .domain, value: expected))
+    }
+
+    @Test func noHostGivesNil() {
+        #expect(URLMatcher.suggested(for: URL(string: "about:blank")!) == nil)
+    }
+}
+
 struct RuleEngineTests {
     let work = UUID()
     let personal = UUID()

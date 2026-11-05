@@ -74,6 +74,22 @@ public struct URLMatcher: Codable, Equatable, Hashable, Sendable {
         return !trimmed.contains(where: { $0.isWhitespace || $0 == "/" })
     }
 
+    /// A domain matcher for the site of `url`, for a rule made from a page.
+    /// It keeps the last two labels of the host ("app.datadoghq.com" gives
+    /// "datadoghq.com"), or three when the last two look like a country
+    /// suffix such as "co.uk". It returns nil for a URL with no host.
+    public static func suggested(for url: URL) -> URLMatcher? {
+        guard let host = url.host()?.lowercased(), !host.isEmpty else { return nil }
+        let labels = bareHost(host).split(separator: ".")
+        guard labels.count > 2 else {
+            return URLMatcher(scope: .domain, value: bareHost(host))
+        }
+        let last = labels[labels.count - 1]
+        let secondLast = labels[labels.count - 2]
+        let keep = (last.count == 2 && secondLast.count <= 3) ? 3 : 2
+        return URLMatcher(scope: .domain, value: labels.suffix(keep).joined(separator: "."))
+    }
+
     static func bareHost(_ host: String) -> String {
         host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
     }

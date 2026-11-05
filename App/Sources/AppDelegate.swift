@@ -11,6 +11,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var library: Library?
     private var sessions: TabSessions?
     private var mainWindow: BrowserWindowController?
+    private var airTrafficControl: AirTrafficControlWindowController?
     /// Links that arrived before the database was open.
     private var pendingURLs: [URL] = []
 
@@ -49,6 +50,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // so screenshots can show it without key presses.
         if let query = UserDefaults.standard.string(forKey: "ChordPaletteQuery") {
             mainWindow?.showPalette(mode: .newTab, initialText: query)
+        }
+        // `--args -ChordShowAirTrafficControl https://example.com` opens Air
+        // Traffic Control testing that link, for screenshots.
+        if let test = UserDefaults.standard.string(forKey: "ChordShowAirTrafficControl") {
+            showAirTrafficControl(routing: URL(string: test))
         }
         NSApp.activate()
     }
@@ -101,6 +107,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         mainWindow?.showWindow(nil)
     }
 
+    /// Shows the Air Traffic Control window. With a page URL, the window
+    /// tests it and adds a rule for its site when none routes it.
+    func showAirTrafficControl(routing pageURL: URL?) {
+        guard let library else { return }
+        if airTrafficControl == nil {
+            airTrafficControl = AirTrafficControlWindowController(library: library)
+        }
+        airTrafficControl?.show(routing: pageURL)
+    }
+
+    @objc func showAirTrafficControl(_ sender: Any?) {
+        showAirTrafficControl(routing: nil)
+    }
+
     // MARK: Menu
 
     private static func buildMainMenu() -> NSMenu {
@@ -109,6 +129,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let appMenu = NSMenu()
         appMenu.addItem(withTitle: "About Chord",
                         action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
+        appMenu.addItem(.separator())
+        appMenu.addItem(withTitle: "Air Traffic Control…", action: #selector(showAirTrafficControl(_:)),
+                        keyEquivalent: ",")
         appMenu.addItem(.separator())
         appMenu.addItem(withTitle: "Hide Chord", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
         appMenu.addItem(withTitle: "Quit Chord", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
