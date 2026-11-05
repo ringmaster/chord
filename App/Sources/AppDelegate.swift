@@ -71,6 +71,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                          keyEquivalent: "a")
         mainMenu.addItem(submenu(editMenu))
 
+        let viewMenu = NSMenu(title: "View")
+        viewMenu.addItem(withTitle: "Toggle Sidebar",
+                         action: #selector(BrowserWindowController.toggleSidebar(_:)),
+                         keyEquivalent: "s")
+        mainMenu.addItem(submenu(viewMenu))
+
         return mainMenu
     }
 
